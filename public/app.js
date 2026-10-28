@@ -61,12 +61,36 @@ function cardHTML(c, cls = '', style = '') {
   const suit = `<svg viewBox="0 0 24 24">${SUIT_SVG[s]}</svg>`;
   return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="r">${rt}</span><span class="s1">${suit}</span><span class="s2">${suit}</span></div>`;
 }
-function toast(text) {
+// toast with an optional fix-it action: toast('Not enough money', ['Cashier', () => renderCashier('deposit')])
+function toast(text, action) {
   const d = document.createElement('div');
-  d.textContent = text;
+  const t = document.createElement('span'); t.textContent = text; d.appendChild(t);
+  if (action) {
+    const b = document.createElement('button'); b.textContent = action[0];
+    b.onclick = () => { d.remove(); action[1](); };
+    d.appendChild(b); d.classList.add('has-action');
+  }
   $('#toast').appendChild(d);
-  setTimeout(() => d.remove(), 3200);
+  setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 250); }, action ? 5200 : 2800);
 }
+// a fix for common server errors, so nobody is left stranded
+function errorAction(msg) {
+  if (/bankroll|balance|enough/i.test(msg) && S.view !== 'cashier') return ['Cashier', () => renderCashier('deposit')];
+  if (/Pokr Club/i.test(msg)) return ['See the club', () => renderClub()];
+  return null;
+}
+// screen-to-screen transition, only when the screen actually changes
+function enter() {
+  const key = S.view;
+  if (key === S.lastPainted) return;
+  S.lastPainted = key;
+  const el = app.firstElementChild;
+  if (el) el.classList.add('enter');
+  window.scrollTo(0, 0);
+}
+// a tiny tap of feedback on phones that support it
+const skelRows = n => `<div class="rows">${Array.from({ length: n }, () => '<div class="trow"><span class="skel" style="width:28px;height:28px;border-radius:50%"></span><div class="txt" style="gap:6px"><span class="skel" style="width:55%;height:12px"></span><span class="skel" style="width:35%;height:10px"></span></div></div>').join('')}</div>`;
+function buzz(ms = 8) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch { /* not supported */ } }
 async function copy(text) { try { await navigator.clipboard.writeText(text); return true; } catch { return false; } }
 
 /* ---------------- connection ---------------- */
@@ -78,7 +102,8 @@ function connect() {
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage(m); };
   ws.onclose = () => {
     if (S.view !== 'boot') $('#conn').hidden = false;
-    setTimeout(connect, Math.min(8000, 400 * 2 ** retry++));
+    clearTimeout(S.retryTimer);
+    S.retryTimer = setTimeout(connect, Math.min(8000, 400 * 2 ** retry++));
   };
 }
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -121,7 +146,7 @@ function onMessage(m) {
       renderFeed();
       break;
     case 'react': showReaction(m); break;
-    case 'error': toast(m.message); break;
+    case 'error': toast(m.message, errorAction(m.message)); break;
   }
 }
 
@@ -136,9 +161,15 @@ function routeCode() {
 function enterApp() { const code = routeCode(); if (code) joinCode(code); else goLobby(); }
 function joinCode(code) {
   S.view = 'table'; S.table = null; S.chat = []; S.actionKey = ''; S.chatOpen = false; S.menuOpen = false; S.unread = false;
-  app.innerHTML = `<div class="boot"><p class="wait">Pulling up a chair at <span class="num">${esc(code)}</span>…</p></div>`;
+  app.innerHTML = `<div class="tbl skel-table" aria-busy="true" aria-label="Joining table ${esc(code)}">
+    <div class="tbar"><div class="skel" style="width:110px;height:34px"></div><div class="skel" style="width:88px;height:40px;border-radius:999px"></div></div>
+    <div class="stage"><div class="rail skel"></div></div>
+    <div class="mine"><div class="skel" style="height:56px"></div><div class="skel" style="height:44px;border-radius:999px"></div></div>
+  </div>`;
   send({ t: 'join', code });
 }
+// stepping away from a table to another screen keeps your seat
+function leaveTableView() { if (S.view === 'table') { send({ t: 'leave', keepSeat: true }); nav('/'); S.table = null; closeChat(); closeMenu(); } }
 function goLobby() { S.view = 'lobby'; S.table = null; closeChat(); send({ t: 'lobby' }); renderLobby(); }
 function leaveTable() { send({ t: 'leave' }); nav('/'); S.view = 'lobby'; S.table = null; closeChat(); renderLobby(); }
 window.addEventListener('popstate', () => {
@@ -194,6 +225,7 @@ function renderAuth(mode) {
     </form>
     <p class="fine">${signup ? 'You start with $1,000 in play money. ' : ''}Play money only for now, no real money.</p>
   </main>`;
+  enter();
   app.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
   if (signup) bindAvatarGrid();
   $('#auth').onsubmit = e => {
@@ -237,6 +269,7 @@ function renderProfileEdit() {
       <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button><button class="btn ghost" type="button" id="pf-logout">Log out</button></div>
     </form>
   </main>`;
+  enter();
   bindAvatarGrid();
   $('#pf-cancel').onclick = () => goLobby();
   $('#pf-more').onclick = () => renderClub();
@@ -264,12 +297,13 @@ function renderLobby() {
       <h1 class="marquee" aria-label="Pokr">Pokr</h1>
       <button class="me-chip" id="edit-me" title="Profile">${avatarHTML(me.avatar)}<span class="nm">${esc(me.name)}</span><span class="num">${money(me.bankroll)}</span></button>
     </div>
+    ${Object.keys(me.atTablesBy || {}).length ? `<div class="seated">${Object.entries(me.atTablesBy).map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
     <div class="lobby-grid">
       <section class="panel a-open">
         <h2>Open tables</h2>
-        ${L.tables.length ? `<div class="rows">${L.tables.map(t => `
+        ${!S.lobby ? skelRows(2) : L.tables.length ? `<div class="rows">${L.tables.map(t => `
           <div class="trow"><span class="chip"></span><div class="txt"><span class="nm">${esc(t.name)}</span><span class="lbl">${blinds(t.sb, t.bb)} · ${t.players + t.bots}/${t.seats} seated</span></div><button class="btn ghost small" data-join="${t.code}">Join</button></div>`).join('')}</div>`
-          : '<p class="empty-note">No open tables right now. Start one below and send the link to your friends.</p>'}
+          : `<div class="empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one and send the link to your friends.</p><button class="btn small" id="empty-start">Start a table</button></div>`}
       </section>
       <section class="panel bank a-bank">
         <div class="bank-head"><span class="lbl">Bankroll${me.atTables ? ` · ${money(me.atTables)} at tables` : ''}</span>
@@ -303,14 +337,15 @@ function renderLobby() {
       </form>
       <section class="panel a-board">
         <h2>High Rollers</h2>
-        ${L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
+        ${!S.lobby ? skelRows(3) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
           <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar)}<span class="nm">${esc(p.name)}</span>
           <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
-          : '<p class="empty-note">Play a hand to get on the board. Ranked by net winnings, all time.</p>'}
+          : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot. Ranked by net winnings, all time.</p></div>'}
       </section>
     </div>
     <p class="fine">Play money only for now. No real money.</p>
   </div>`;
+  enter();
   $('#edit-me').onclick = () => renderProfileEdit();
   $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderLobby(); };
   app.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
@@ -330,6 +365,8 @@ function renderLobby() {
   $('#go-dep').onclick = () => renderCashier('deposit');
   $('#go-wd').onclick = () => renderCashier('withdraw');
   $('#go-club').onclick = () => renderClub();
+  app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
+  const es = $('#empty-start'); if (es) es.onclick = () => { const n = $('#tname'); n.scrollIntoView({ behavior: 'smooth', block: 'center' }); n.focus({ preventScroll: true }); };
 }
 
 /* ---------------- Pokr Club: themes + avatars ---------------- */
@@ -343,6 +380,7 @@ function pageBar(title) {
   return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Lobby</button><h1 class="marquee">${title}</h1><span class="pb-gap"></span></div>`;
 }
 function renderClub() {
+  leaveTableView();
   S.view = 'club';
   const me = S.me, C = S.catalog;
   if (!me || !C) { goLobby(); return; }
@@ -369,6 +407,7 @@ function renderClub() {
           <span class="thumb t-${t.id}" style="--wall:${look.wall};--felt:${look.felt};--acc:${look.accent}"><span class="oval"></span></span>
           <span class="tname">${esc(t.name)}</span><span class="tblurb">${esc(t.blurb)}</span>
           <span class="tstate">${using ? 'In use' : locked ? 'Pokr Club' : 'Use this'}</span></button>`;
+  enter();
       }).join('')}</div>
     </section>
     <section class="panel">
@@ -399,6 +438,7 @@ function feeFor(amount, speed) {
   return Math.max(F.instantMinCents, Math.round(amount * F.instantPct / 100));
 }
 function renderCashier(tab) {
+  leaveTableView();
   S.view = 'cashier';
   if (tab) S.cashTab = tab;
   const me = S.me, C = S.catalog;
@@ -438,9 +478,10 @@ function renderCashier(tab) {
           <div class="txt"><span class="nm">${t.type === 'deposit' ? 'Deposit' : 'Withdrawal'} · ${t.speed === 'instant' ? 'Instant' : 'Standard'}</span>
           <span class="lbl">${new Date(t.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${t.fee ? ` · fee ${money(t.fee)}` : ''}</span></div>
           <div class="txr"><span class="num ${t.type === 'deposit' ? 'up' : ''}">${t.type === 'deposit' ? '+' : '−'}${money(t.type === 'deposit' ? t.net : t.amount)}</span><span class="pill ${t.status}">${t.status === 'pending' ? 'On the way' : 'Done'}</span></div></div>`).join('')}</div>`
-        : '<p class="empty-note">No deposits or withdrawals yet.</p>'}
+        : '<div class="empty"><p>No deposits or withdrawals yet.</p><p class="sub">Your transfers will show up here with their status.</p></div>'}
     </section>
   </div>`;
+  enter();
   $('#pg-back').onclick = goLobby;
   app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderCashier(b.dataset.tab));
   const amtIn = $('#cash-amt');
@@ -481,6 +522,7 @@ function renderTableShell() {
     <div class="stage" id="stage"></div>
     <section class="mine" id="mine"></section>
   </div>`;
+  enter();
   renderCorner();
 }
 
@@ -573,6 +615,20 @@ function openChat() {
       <form class="composer" id="chatform"><input id="chatin" maxlength="200" placeholder="Say something…" autocomplete="off" aria-label="Chat message"><button class="btn primary small" type="submit">Send</button></form>
     </aside>`;
   $('#chatScrim').onclick = closeChat;
+  // drag the sheet down to dismiss it, like a native sheet
+  const sheet = root.querySelector('.sheet'), handle = root.querySelector('.sheet-head').parentElement.querySelector('.grab');
+  let y0 = null, dy = 0;
+  const startDrag = e => { if (isWide()) return; y0 = e.clientY; dy = 0; sheet.style.transition = 'none'; sheet.setPointerCapture(e.pointerId); };
+  const moveDrag = e => { if (y0 === null) return; dy = Math.max(0, e.clientY - y0); sheet.style.transform = `translateY(${dy}px)`; };
+  const endDrag = () => {
+    if (y0 === null) return; y0 = null;
+    sheet.style.transition = 'transform .22s cubic-bezier(.2,.8,.2,1)';
+    if (dy > 90) { sheet.style.transform = 'translateY(100%)'; setTimeout(closeChat, 200); } else sheet.style.transform = '';
+  };
+  for (const zone of [handle, root.querySelector('.sheet-head')]) zone.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; startDrag(e); });
+  sheet.addEventListener('pointermove', moveDrag);
+  sheet.addEventListener('pointerup', endDrag);
+  sheet.addEventListener('pointercancel', endDrag);
   $('#chatClose').onclick = closeChat;
   $('#tab-chat').onclick = () => { S.sideTab = 'chat'; renderFeed(); };
   $('#tab-hist').onclick = () => { S.sideTab = 'hist'; renderFeed(); };
@@ -605,7 +661,7 @@ function renderFeed() {
     feed.innerHTML = S.chat.length ? S.chat.map(m => m.sys
       ? `<div class="msg sys">${esc(m.text)}</div>`
       : `<div class="msg">${avatarHTML(m.avatar)}<div class="body"><span class="who">${esc(m.name)}</span><span>${esc(m.text)}</span></div></div>`).join('')
-      : '<p class="empty-note">No messages yet. Say something.</p>';
+      : '<div class="empty"><p>It’s quiet in here.</p><p class="sub">Say hi, or send a reaction.</p></div>';
   } else {
     const log = S.table ? S.table.log : [];
     feed.innerHTML = log.length ? log.map(l => `<div class="histline ${/^Hand #/.test(l) ? 'h' : ''}">${esc(l)}</div>`).join('') : '<p class="empty-note">Hands will show up here.</p>';
@@ -722,6 +778,9 @@ function renderMine(force) {
   const A = T.actions;
   const myTurn = T.phase === 'play' && T.toAct === T.you && A;
   if (!myTurn) S.raiseOpen = false;
+  const turnKey = myTurn ? `${T.handNo}:${T.street}:${A.currentBet}:${A.toCall}` : '';
+  if (turnKey && turnKey !== S.lastTurnKey) buzz(15);
+  S.lastTurnKey = turnKey;
   const key = JSON.stringify([T.you, T.phase, T.handNo, T.toAct, A, me && [me.chips, me.cards, me.folded, me.sittingOut, me.last, me.bet, me.dealt], T.myHand, S.me && S.me.bankroll, isWide(), S.raiseOpen]);
   if (!force && key === S.actionKey) return;
   S.actionKey = key;
@@ -771,10 +830,12 @@ function renderMine(force) {
   el.innerHTML = html;
 
   const on = (id, fn) => { const b = el.querySelector('#' + id); if (b) b.onclick = fn; };
-  on('a-fold', () => send({ t: 'act', kind: 'fold' }));
-  on('a-call', () => send({ t: 'act', kind: A.canCheck ? 'check' : 'call' }));
+  const act = (kind, amount) => { buzz(); el.querySelectorAll('.acts .btn, .pk-go').forEach(b => { b.disabled = true; }); send({ t: 'act', kind, amount }); };
+  on('a-fold', () => act('fold'));
+  on('a-call', () => act(A.canCheck ? 'check' : 'call'));
   on('a-raise', () => {
-    if (A.minTo >= A.maxTo) { send({ t: 'act', kind: 'raise', amount: A.maxTo }); return; }
+    if (A.minTo >= A.maxTo) { act('raise', A.maxTo); return; }
+    buzz(5);
     S.raiseOpen = true; S.raiseTo = A.minTo; renderMine(true);
   });
   on('a-back', () => send({ t: 'sitout', out: false }));
@@ -814,8 +875,8 @@ function bindRaisePicker(T, A) {
   $('#pk-minus').onclick = () => setRaise(S.raiseTo - T.bb);
   $('#pk-plus').onclick = () => setRaise(S.raiseTo + T.bb);
   $('#pk-slider').oninput = e => setRaise(+e.target.value);
-  document.querySelectorAll('.pchip').forEach(b => b.onclick = () => setRaise(+b.dataset.v));
-  $('#pk-go').onclick = () => { send({ t: 'act', kind: 'raise', amount: S.raiseTo }); S.raiseOpen = false; };
+  document.querySelectorAll('.pchip').forEach(b => b.onclick = () => { buzz(4); setRaise(+b.dataset.v); });
+  $('#pk-go').onclick = () => { buzz(); $('#pk-go').disabled = true; send({ t: 'act', kind: 'raise', amount: S.raiseTo }); S.raiseOpen = false; };
   setRaise(S.raiseTo);
 }
 function setRaise(v) {
@@ -866,7 +927,10 @@ function openBuyIn(seat, isRebuy) {
   const max = Math.min(T.buyIn.max - current, me.bankroll);
   const min = isRebuy ? Math.min(T.bb, max) : T.buyIn.min;
   if (max < min || max <= 0) {
-    openModal(`<h2>Not enough chips</h2><p class="wait">You have ${fmt(me.bankroll)} in your bankroll${isRebuy ? '' : ` and this table needs at least ${fmt(T.buyIn.min)}`}. Grab free chips in the lobby.</p><button class="btn primary" data-close>OK</button>`);
+    openModal(`<h2>Not enough in your balance</h2><p class="wait">You have ${money(me.bankroll)}${isRebuy ? '' : `, and this table needs at least ${money(T.buyIn.min)}`}.</p>
+      <div class="acts"><button class="btn" data-close>Not now</button><button class="btn primary" id="nb-cash">Add money</button></div>`, () => {
+      $('#nb-cash').onclick = () => { closeModal(); renderCashier('deposit'); };
+    });
     return;
   }
   let v = max;
@@ -908,4 +972,6 @@ requestAnimationFrame(tick);
 let wasWide = isWide();
 addEventListener('resize', () => { const w = isWide(); if (w !== wasWide && S.view === 'table' && S.table) { wasWide = w; renderStage(); renderMine(true); } });
 
+$('#conn').innerHTML = '<span>Connection lost. Reconnecting…</span><button id="conn-retry">Retry now</button>';
+$('#conn-retry').onclick = () => { if (ws && ws.readyState === 3) { clearTimeout(S.retryTimer); retry = 0; connect(); } };
 connect();

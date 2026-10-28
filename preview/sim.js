@@ -27,7 +27,7 @@
     const now = Date.now();
     const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
     const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
-    return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
   };
   const sendMe = () => { if (db.user) out({ t: 'me', user: meOf(db.user) }); };
   const sendCatalog = () => out({ t: 'catalog', catalog: shop.catalog() });
@@ -171,7 +171,7 @@
       out({ t: 'state', s: t.view(db.user.id) });
       if (!t.chat.length) botSay(t, 3, 'gl all', 1200);
     },
-    leave(c) { const t = tables.get(c.code); if (t) t.stand(db.user.id); c.code = null; out(lobby()); },
+    leave(c, m) { const t = tables.get(c.code); if (t && !(m && m.keepSeat)) t.stand(db.user.id); c.code = null; if (!(m && m.keepSeat)) out(lobby()); },
     sit(c, m) {
       const t = tables.get(c.code), u = db.user;
       const buyIn = Math.floor(Number(m.buyIn));

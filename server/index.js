@@ -44,7 +44,7 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
