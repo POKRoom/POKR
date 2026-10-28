@@ -93,4 +93,25 @@ function equity(hand, board, opp, iters = 240) {
   return score / iters;
 }
 
-module.exports = { newDeck, eval5, best, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };
+
+// Casual, spoken-style description: "two pair, kings and nines", "a flush, queen high".
+const WORD = { 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten', 11: 'jack', 12: 'queen', 13: 'king', 14: 'ace' };
+const many = r => (r === 6 ? 'sixes' : WORD[r] + 's');
+function describe(v) {
+  const t = [];
+  let x = v;
+  for (let i = 0; i < 5; i++) { t.unshift(x % 15); x = Math.floor(x / 15); }
+  switch (x) {
+    case 0: return `${WORD[t[0]]} high`;
+    case 1: return `a pair of ${many(t[0])}`;
+    case 2: return `two pair, ${many(t[0])} and ${many(t[1])}`;
+    case 3: return `three ${many(t[0])}`;
+    case 4: return `a straight, ${WORD[t[0]]} high`;
+    case 5: return `a flush, ${WORD[t[0]]} high`;
+    case 6: return `a full house, ${many(t[0])} over ${many(t[1])}`;
+    case 7: return `four ${many(t[0])}`;
+    default: return t[0] === 14 ? 'a royal flush' : `a straight flush, ${WORD[t[0]]} high`;
+  }
+}
+
+module.exports = { describe, newDeck, eval5, best, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };

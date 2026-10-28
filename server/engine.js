@@ -1,7 +1,7 @@
 'use strict';
 // The table engine. The server is the only place cards exist: clients get a personalized view
 // with their own hole cards and nobody else's until showdown.
-const { newDeck, best, handName, cardTxt } = require('./cards');
+const { newDeck, best, handName, describe, cardTxt } = require('./cards');
 const bots = require('./bots');
 
 const handReset = () => ({
@@ -83,7 +83,7 @@ class Table {
     if (this.seatOf(player.userId) >= 0) return 'You already have a seat here';
     this.seats[idx] = Object.assign({
       kind: 'human', userId: player.userId, name: player.name, avatar: player.avatar,
-      chips, sittingOut: false, connected: true, timeouts: 0, leaving: false, disconnectedAt: 0,
+      chips, buyIns: chips, sittingOut: false, connected: true, timeouts: 0, leaving: false, disconnectedAt: 0,
     }, handReset());
     this._log(`${player.name} sits down with ${chips}`);
     this.maybeStart();
@@ -149,6 +149,7 @@ class Table {
     const s = this.seats[i];
     if (this.phase === 'play' && Table.inHand(s)) return 'You can add chips after this hand';
     s.chips += amount;
+    s.buyIns = (s.buyIns || 0) + amount;
     s.sittingOut = false;
     s.timeouts = 0;
     if (s.last === 'Busted') s.last = '';
@@ -409,7 +410,7 @@ class Table {
     for (const w of winners) this._log(`${w.name} wins ${w.won}`);
     this.result = {
       foldWin: false,
-      winners: winners.map(w => ({ seat: this.seats.indexOf(w), name: w.name, amount: w.won, hand: handName(w.score) })),
+      winners: winners.map(w => ({ seat: this.seats.indexOf(w), name: w.name, amount: w.won, hand: describe(w.score) })),
     };
     this.endHand();
   }
@@ -453,12 +454,8 @@ class Table {
     if (me >= 0) {
       const s = this.seats[me];
       if (s.dealt && s.hand.length) {
-        if (this.board.length >= 3) myHand = handName(best([...s.hand, ...this.board]).score);
-        else {
-          const [a, b] = s.hand.map(c => c % 13 + 2).sort((x, y) => y - x);
-          const R = r => ({ 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' })[r] || String(r);
-          myHand = a === b ? `Pocket ${R(a)}s` : `${R(a)}-${R(b)}${Math.floor(s.hand[0] / 13) === Math.floor(s.hand[1] / 13) ? ' suited' : ''}`;
-        }
+        // nothing to say before the flop; after it, say it the way you'd say it out loud
+        if (this.board.length >= 3 && !s.folded) myHand = describe(best([...s.hand, ...this.board]).score);
       }
       if (this.phase === 'play' && this.toAct === me) {
         const toCall = this.currentBet - s.bet;
@@ -470,6 +467,13 @@ class Table {
         };
       }
     }
+    // how far up or down you are since sitting down (chips already in this hand's pot still count as yours)
+    let net = null;
+    if (me >= 0) {
+      const s = this.seats[me];
+      const base = this.phase === 'play' && s.dealt ? s.startChips : s.chips;
+      net = base - (s.buyIns || 0);
+    }
     const pot = this.phase === 'done' ? this.seats.reduce((a, s) => a + (s ? s.won : 0), 0) : this.potTotal();
     return {
       code: this.code, name: this.name, sb: this.sb, bb: this.bb, isPrivate: this.isPrivate,
@@ -477,7 +481,7 @@ class Table {
       board: this.board, pot, currentBet: this.currentBet, dealer: this.dealer, toAct: this.toAct,
       turnMs: this.turnDeadline ? Math.max(0, this.turnDeadline - now) : 0, turnTotal: this.timing.turn,
       nextHandMs: this.nextHandAt ? Math.max(0, this.nextHandAt - now) : 0,
-      seats, you: me, myHand, actions, result: this.result, log: this.log.slice(-40),
+      seats, you: me, myHand, net, actions, result: this.result, log: this.log.slice(-40),
       buyIn: { min: this.buyInMin, max: this.buyInMax },
     };
   }
