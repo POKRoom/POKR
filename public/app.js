@@ -50,7 +50,8 @@ async function copy(text) {
 /* ---------------- connection ---------------- */
 let ws, retry = 0;
 function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  const Sock = window.PokrSocket || WebSocket; // the in-Claude preview swaps in a local, bots-only server
+  ws = new Sock((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onopen = () => { S.connected = true; retry = 0; $('#conn').hidden = true; S.rejoin = S.view === 'table'; send({ t: 'hello', token: S.token }); };
   ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage(m); };
   ws.onclose = () => {
@@ -77,7 +78,7 @@ function onMessage(m) {
       break;
     }
     case 'lobby': S.lobby = m; if (S.view === 'lobby') renderLobby(); break;
-    case 'created': history.pushState({}, '', '/t/' + m.code); joinCode(m.code); break;
+    case 'created': nav('/t/' + m.code); joinCode(m.code); break;
     case 'state': {
       const fresh = S.view !== 'table' || !S.table || S.table.code !== m.s.code || !$('#stage');
       S.table = m.s; S.tableAt = performance.now();
@@ -85,7 +86,7 @@ function onMessage(m) {
       renderTable();
       break;
     }
-    case 'notFound': toast('That table is closed or the code is wrong'); history.replaceState({}, '', '/'); goLobby(); break;
+    case 'notFound': toast('That table is closed or the code is wrong'); nav('/', true); goLobby(); break;
     case 'chat': if (m.reset) S.chat = []; S.chat.push(...m.items); if (S.chat.length > 80) S.chat.splice(0, S.chat.length - 80); renderFeed(); break;
     case 'react': showReaction(m); break;
     case 'error': toast(m.message); break;
@@ -93,7 +94,11 @@ function onMessage(m) {
 }
 
 /* ---------------- routing ---------------- */
-function routeCode() { const m = location.pathname.match(/^\/t\/([A-Za-z0-9]{3,8})/); return m ? m[1].toUpperCase() : null; }
+const PREVIEW = !!window.PokrSocket;
+function nav(path, replace) { if (PREVIEW) return; if (replace) history.replaceState({}, '', path); else history.pushState({}, '', path); }
+function routeCode() {
+  if (PREVIEW) return null;
+  const m = location.pathname.match(/^\/t\/([A-Za-z0-9]{3,8})/); return m ? m[1].toUpperCase() : null; }
 function enterApp() { const code = routeCode(); if (code) joinCode(code); else goLobby(); }
 function joinCode(code) {
   S.view = 'table'; S.table = null; S.chat = []; S.actionKey = '';
@@ -101,7 +106,7 @@ function joinCode(code) {
   send({ t: 'join', code });
 }
 function goLobby() { S.view = 'lobby'; S.table = null; send({ t: 'lobby' }); renderLobby(); }
-function leaveTable() { send({ t: 'leave' }); history.pushState({}, '', '/'); S.view = 'lobby'; S.table = null; renderLobby(); }
+function leaveTable() { send({ t: 'leave' }); nav('/'); S.view = 'lobby'; S.table = null; renderLobby(); }
 window.addEventListener('popstate', () => {
   const code = routeCode();
   if (code) joinCode(code);
@@ -221,9 +226,9 @@ function renderLobby() {
     e.preventDefault();
     const code = $('#jcode').value.trim().toUpperCase();
     if (!code) return;
-    history.pushState({}, '', '/t/' + code); joinCode(code);
+    nav('/t/' + code); joinCode(code);
   };
-  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { history.pushState({}, '', '/t/' + b.dataset.join); joinCode(b.dataset.join); });
+  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
   const r = $('#refill'); if (r) r.onclick = () => send({ t: 'refill' });
 }
 
@@ -259,6 +264,7 @@ function renderTableShell() {
     leaveTable();
   };
   $('#invite').onclick = async e => {
+    if (PREVIEW) { openModal('<h2>Invites need the live version</h2><p class="wait" style="margin:0">In this preview you play against bots. Once Pokr is online, this button copies a link your friends can open to join your table.</p><button class="btn primary" data-close>Got it</button>'); return; }
     const url = location.origin + '/t/' + S.table.code;
     if (await copy(url)) { e.target.textContent = 'Link copied'; setTimeout(() => { e.target.textContent = inviteLabel(); }, 1800); }
     else openModal(`<h2>Invite friends</h2><p class="wait">Send them this link:</p><input readonly value="${esc(url)}" id="inv-url"><button class="btn primary" data-close>Done</button>`, () => $('#inv-url').select());
