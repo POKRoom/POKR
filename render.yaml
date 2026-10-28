@@ -1,0 +1,17 @@
+# Render Blueprint for Pokr. Render reads this when you choose New > Blueprint.
+services:
+  - type: web
+    name: pokr
+    runtime: node
+    plan: free            # change to "starter" ($7/mo) and uncomment the disk below to keep accounts between restarts
+    buildCommand: "true"  # nothing to build: Pokr has no dependencies
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+    # disk:
+    #   name: pokr-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # (and add an env var DATA_DIR=/var/data)

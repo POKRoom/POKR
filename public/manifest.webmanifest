@@ -1,0 +1,10 @@
+{
+  "name": "Pokr",
+  "short_name": "Pokr",
+  "description": "Texas Hold'em with your friends.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c151d",
+  "theme_color": "#0c151d",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
