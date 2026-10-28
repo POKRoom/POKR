@@ -43,6 +43,7 @@ ${shim}
 ${mod('cards', 'server/cards.js')}
 ${mod('bots', 'server/bots.js')}
 ${mod('engine', 'server/engine.js')}
+${mod('shop', 'server/shop.js')}
 ${read('preview/sim.js')}
 </script>
 <script>

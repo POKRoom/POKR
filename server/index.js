@@ -8,6 +8,7 @@ const { attach } = require('./ws');
 const { Table } = require('./engine');
 const { Store, START_BANKROLL } = require('./store');
 const { money } = require('./cards');
+const shop = require('./shop');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -17,7 +18,7 @@ store.refundTables();
 // blinds in cents: 5¢/10¢ up to $2/$5
 const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
 const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
-const AVATAR_COUNT = 16, COLOR_COUNT = 8;
+const AVATAR_COUNT = shop.AVATAR_COUNT, COLOR_COUNT = 8;
 const REFILL_BELOW = 10000; // $100
 
 const tables = new Map();
@@ -43,7 +44,7 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW };
+  return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
@@ -125,18 +126,20 @@ const handlers = {
     if (!u) return send(c, { t: 'needProfile' });
     c.userId = u.id; c.token = m.token;
     send(c, { t: 'me', user: meOf(u) });
+    send(c, { t: 'catalog', catalog: shop.catalog() });
   },
 
   signup(c, m) {
     if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
     const name = cleanText(m.name, 16);
     if (name.length < 2) return send(c, { t: 'authError', message: 'Pick a name with at least 2 characters' });
-    if (!validAvatar(m.avatar)) return send(c, { t: 'authError', message: 'Pick an avatar' });
+    if (!validAvatar(m.avatar) || m.avatar.a >= shop.FREE_AVATARS) return send(c, { t: 'authError', message: 'Pick an avatar' });
     const r = store.signup({ email: m.email, password: m.password, name, avatar: { a: m.avatar.a, c: m.avatar.c } });
     if (r.error) return send(c, { t: 'authError', message: r.error });
     c.userId = r.user.id; c.token = r.token;
     send(c, { t: 'token', token: r.token });
     send(c, { t: 'me', user: meOf(r.user) });
+    send(c, { t: 'catalog', catalog: shop.catalog() });
   },
 
   login(c, m) {
@@ -146,6 +149,7 @@ const handlers = {
     c.userId = r.user.id; c.token = r.token;
     send(c, { t: 'token', token: r.token });
     send(c, { t: 'me', user: meOf(r.user) });
+    send(c, { t: 'catalog', catalog: shop.catalog() });
   },
 
   logout(c) {
@@ -161,6 +165,7 @@ const handlers = {
     if (!validAvatar(m.avatar)) return send(c, { t: 'error', message: 'Pick an avatar' });
     const avatar = { a: m.avatar.a, c: m.avatar.c };
     const u = c.userId && store.byId(c.userId);
+    if (u && !shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pokr Club or the shop' });
     if (u) {
       u.name = name; u.avatar = avatar;
       store.save();
@@ -173,6 +178,41 @@ const handlers = {
   },
 
   lobby(c) { send(c, lobbyPayload()); },
+
+  // ---- Pokr Club, avatar shop, themes (test mode: nothing is charged) ----
+  club(c, m) {
+    const u = store.byId(c.userId);
+    const r = shop.club(u, m.action);
+    if (r.error) return send(c, { t: 'error', message: r.error });
+    if (r.resetAvatar) for (const t of tables.values()) { const i = t.seatOf(u.id); if (i >= 0) { t.seats[i].avatar = u.avatar; broadcastTable(t); } }
+    store.save(); sendMe(u.id);
+    send(c, { t: 'notice', message: m.action === 'join' ? 'Welcome to Pokr Club' : 'Membership canceled' });
+  },
+  buyAvatar(c, m) {
+    const u = store.byId(c.userId);
+    const r = shop.buyAvatar(u, Number(m.a));
+    if (r.error) return send(c, { t: 'error', message: r.error });
+    store.save(); sendMe(u.id);
+    send(c, { t: 'notice', message: 'Avatar unlocked' });
+  },
+  setTheme(c, m) {
+    const u = store.byId(c.userId);
+    const r = shop.setTheme(u, String(m.theme));
+    if (r.error) return send(c, { t: 'error', message: r.error });
+    store.save(); sendMe(u.id);
+  },
+
+  // ---- Cashier: free deposits and standard withdrawals; a fee only on instant transfers ----
+  cashier(c, m) {
+    const u = store.byId(c.userId);
+    const r = shop.cashier(u, { action: m.action, amount: m.amount, speed: m.speed });
+    if (r.error) return send(c, { t: 'error', message: r.error });
+    const tx = r.tx;
+    store.ledger(u, tx.type + ':' + tx.speed + (tx.status === 'pending' ? ':started' : ''), r.bankrollChange, tx.id + (tx.fee ? ` fee ${tx.fee}` : ''));
+    store.save(); sendMe(u.id);
+    const verb = tx.type === 'deposit' ? 'Deposit' : 'Withdrawal';
+    send(c, { t: 'notice', message: tx.status === 'completed' ? `${verb} of ${money(tx.amount)} done` : `${verb} of ${money(tx.amount)} is on its way` });
+  },
 
   refill(c) {
     const u = store.byId(c.userId);
@@ -316,6 +356,16 @@ attach(server, ws => {
     }
   });
 });
+
+// Standard (free) transfers settle in the background.
+setInterval(() => {
+  for (const u of store.users.values()) {
+    const done = shop.settle(u);
+    if (!done.length) continue;
+    for (const tx of done) store.ledger(u, tx.type + ':standard:settled', tx.type === 'deposit' ? tx.net : 0, tx.id);
+    store.save(); sendMe(u.id);
+  }
+}, 5000).unref();
 
 // Housekeeping: stand up players who vanished, close empty tables.
 setInterval(() => {

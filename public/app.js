@@ -1,7 +1,8 @@
 'use strict';
 /* Pokr web client. The server holds the truth; this file only draws what it's told and sends intents. */
 
-const AVATARS = ['🦊', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦉', '🐙', '🦈', '🐺', '🐰', '🦄', '🐲', '👽', '🤠'];
+// 0-15 free, 16-21 Pokr Club, 22-27 avatar shop (mirrors server/shop.js)
+const AVATARS = ['🦊', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦉', '🐙', '🦈', '🐺', '🐰', '🦄', '🐲', '👽', '🤠', '🦩', '🐆', '🦚', '🎩', '👑', '🃏', '🐞', '🦖', '🐊', '🦅', '🐋', '🦂'];
 const COLORS = ['#C8202B', '#D9A84E', '#2E8F86', '#3E5FB0', '#8E3FA0', '#D0456E', '#5E9A4E', '#7A6A62'];
 const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
 // blinds in cents, matching the server
@@ -51,13 +52,14 @@ function avatarHTML(av) {
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
   return `<span class="ava" style="--ac:${COLORS[(av && av.c) || 0]}" aria-hidden="true">${glyph}</span>`;
 }
-function cardHTML(c, cls = '') {
+function cardHTML(c, cls = '', style = '') {
+  const st = style ? ` style="${style}"` : '';
   if (c === undefined) return `<div class="pc empty ${cls}" aria-hidden="true"></div>`;
-  if (c === null) return `<div class="pc back ${cls}" aria-label="Face-down card"></div>`;
+  if (c === null) return `<div class="pc back ${cls}"${st} aria-label="Face-down card"></div>`;
   const r = c % 13 + 2, s = Math.floor(c / 13);
   const rt = { 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[r] || String(r);
   const suit = `<svg viewBox="0 0 24 24">${SUIT_SVG[s]}</svg>`;
-  return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} ${cls}" role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="r">${rt}</span><span class="s1">${suit}</span><span class="s2">${suit}</span></div>`;
+  return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="r">${rt}</span><span class="s1">${suit}</span><span class="s2">${suit}</span></div>`;
 }
 function toast(text) {
   const d = document.createElement('div');
@@ -83,17 +85,22 @@ function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 
 function onMessage(m) {
   switch (m.t) {
-    case 'needProfile': S.me = null; closeChat(); renderAuth(store.get('pokr.hadAccount') ? 'login' : 'signup'); break;
+    case 'needProfile': S.me = null; document.body.dataset.skin = 'lounge'; closeChat(); renderAuth(store.get('pokr.hadAccount') ? 'login' : 'signup'); break;
     case 'authError': showAuthError(m.message); break;
+    case 'catalog': S.catalog = m.catalog; break;
+    case 'notice': toast(m.message); break;
     case 'token': S.token = m.token; store.set('pokr.token', m.token); store.set('pokr.hadAccount', '1'); break;
     case 'me': {
       const entering = S.view === 'boot' || S.view === 'auth';
       S.me = m.user;
+      document.body.dataset.skin = S.me.theme || 'lounge';
       if (entering) enterApp();
       else if (S.view === 'table') {
         if (S.rejoin) { S.rejoin = false; send({ t: 'join', code: S.table ? S.table.code : routeCode() }); }
         renderMine(true);
       } else if (S.view === 'lobby') renderLobby();
+      else if (S.view === 'club') renderClub();
+      else if (S.view === 'cashier') renderCashier();
       break;
     }
     case 'lobby': S.lobby = m; if (S.view === 'lobby') renderLobby(); break;
@@ -141,11 +148,22 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------------- sign up / log in / profile ---------------- */
-function avatarGrid() {
-  return `<div class="ava-grid">${AVATARS.map((g, i) => `<button type="button" data-a="${i}" aria-pressed="${i === S.draft}" style="--ac:${COLORS[i % 8]}" aria-label="Avatar ${i + 1}">${g}</button>`).join('')}</div>`;
+function canUseAvatar(i) {
+  if (i < 16) return true;
+  if (!S.me) return false;
+  if (i < 22) return !!(S.me.club && S.me.club.active);
+  return (S.me.ownedAvatars || []).includes(i);
+}
+function avatarGrid(all) {
+  const list = AVATARS.map((g, i) => [g, i]).filter(([, i]) => all || i < 16);
+  return `<div class="ava-grid">${list.map(([g, i]) => {
+    const locked = !canUseAvatar(i);
+    return `<button type="button" data-a="${i}" ${locked ? 'data-locked="1"' : ''} class="${locked ? 'locked' : ''}" aria-pressed="${i === S.draft}" style="--ac:${COLORS[i % 8]}" aria-label="Avatar ${i + 1}${locked ? ' (locked)' : ''}">${g}</button>`;
+  }).join('')}</div>`;
 }
 function bindAvatarGrid() {
   app.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+    if (b.dataset.locked) { renderClub(); return; }
     S.draft = +b.dataset.a;
     app.querySelectorAll('[data-a]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.a === S.draft));
   });
@@ -213,7 +231,7 @@ function renderProfileEdit() {
       <h2>Your profile</h2>
       <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
         <input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>
-      <div class="field"><span class="lbl">Avatar</span>${avatarGrid()}</div>
+      <div class="field"><span class="lbl">Avatar</span>${avatarGrid(true)}<button type="button" class="textbtn" id="pf-more">More avatars in Pokr Club ›</button></div>
       <div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>
       <button class="btn primary" type="submit">Save</button>
       <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button><button class="btn ghost" type="button" id="pf-logout">Log out</button></div>
@@ -221,6 +239,7 @@ function renderProfileEdit() {
   </main>`;
   bindAvatarGrid();
   $('#pf-cancel').onclick = () => goLobby();
+  $('#pf-more').onclick = () => renderClub();
   $('#pf-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; send({ t: 'logout' }); };
   $('#pf').onsubmit = e => {
     e.preventDefault();
@@ -262,7 +281,13 @@ function renderLobby() {
           <div class="stat"><b>${winRate}%</b><span>Won</span></div>
           <div class="stat"><b>${money(per.biggestPot)}</b><span>Best pot</span></div>
         </div>
-        ${me.canRefill ? '<button class="btn primary" id="refill">Reload play money (back to $1,000)</button>' : ''}
+        <div class="acts"><button class="btn" id="go-dep">Deposit</button><button class="btn" id="go-wd">Withdraw</button></div>
+        ${me.canRefill ? '<button class="textbtn" id="refill">Reload play money (back to $1,000)</button>' : ''}
+      </section>
+      <section class="panel club-card a-club">
+        ${me.club && me.club.active
+          ? `<div class="cc-row"><div><span class="lbl">Pokr Club member</span><h2>${esc(((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'The Lounge' }).name)}</h2></div><button class="btn ghost small" id="go-club">Change theme</button></div>`
+          : `<div class="cc-row"><div><span class="lbl">Pokr Club · ${money(499)}/mo</span><h2>New themes and avatars</h2></div><button class="btn ghost small" id="go-club">See the club</button></div>`}
       </section>
       <form class="panel a-start" id="create">
         <h2>Start a table</h2>
@@ -302,10 +327,150 @@ function renderLobby() {
   };
   app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
   const r = $('#refill'); if (r) r.onclick = () => send({ t: 'refill' });
+  $('#go-dep').onclick = () => renderCashier('deposit');
+  $('#go-wd').onclick = () => renderCashier('withdraw');
+  $('#go-club').onclick = () => renderClub();
+}
+
+/* ---------------- Pokr Club: themes + avatars ---------------- */
+const THEME_LOOK = {
+  lounge: { wall: '#7A1520', felt: '#1A6B52', accent: '#D9A84E' },
+  neon: { wall: '#1B1035', felt: '#3A1D6E', accent: '#FF4FB8' },
+  monaco: { wall: '#1E2D52', felt: '#1C4E8A', accent: '#D6B26A' },
+  zebra: { wall: '#F2EDE4', felt: '#8E1520', accent: '#F2EDE4' },
+};
+function pageBar(title) {
+  return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Lobby</button><h1 class="marquee">${title}</h1><span class="pb-gap"></span></div>`;
+}
+function renderClub() {
+  S.view = 'club';
+  const me = S.me, C = S.catalog;
+  if (!me || !C) { goLobby(); return; }
+  const member = me.club && me.club.active;
+  const ava = i => `<span class="ava" style="--ac:${COLORS[i % 8]}">${AVATARS[i]}</span>`;
+  app.innerHTML = `
+  <div class="page">
+    ${pageBar('Pokr Club')}
+    <section class="panel club-hero">
+      <span class="lbl">${member ? 'You’re a member' : 'Membership'}</span>
+      <div class="price"><span class="num">${money(C.club.priceCents)}</span><span>/ month</span></div>
+      <ul class="perks"><li>Three extra table themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
+      ${member
+        ? `<p class="wait">Renews ${new Date(me.club.renewsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.</p><button class="textbtn" id="club-cancel">Cancel membership</button>`
+        : `<button class="btn primary" id="club-join">Join Pokr Club</button>`}
+      <p class="test">Test mode: nothing is charged yet.</p>
+    </section>
+    <section class="panel">
+      <h2>Table themes</h2>
+      <div class="themes">${C.themes.map(t => {
+        const look = THEME_LOOK[t.id] || THEME_LOOK.lounge;
+        const using = me.theme === t.id, locked = t.club && !member;
+        return `<button class="theme ${using ? 'using' : ''}" data-theme="${t.id}" ${locked ? 'data-locked="1"' : ''}>
+          <span class="thumb t-${t.id}" style="--wall:${look.wall};--felt:${look.felt};--acc:${look.accent}"><span class="oval"></span></span>
+          <span class="tname">${esc(t.name)}</span><span class="tblurb">${esc(t.blurb)}</span>
+          <span class="tstate">${using ? 'In use' : locked ? 'Pokr Club' : 'Use this'}</span></button>`;
+      }).join('')}</div>
+    </section>
+    <section class="panel">
+      <h2>Members-only avatars</h2>
+      <div class="ava-shop">${C.clubAvatars.map(i => `<div class="aitem ${member ? '' : 'locked'}">${ava(i)}<span>${member ? 'Included' : 'Pokr Club'}</span></div>`).join('')}</div>
+      <h2 style="margin-top:6px">Avatar shop</h2>
+      <div class="ava-shop">${C.shopAvatars.map(i => {
+        const owned = (me.ownedAvatars || []).includes(i);
+        return `<div class="aitem">${ava(i)}${owned ? '<span>Owned</span>' : `<button class="btn small" data-buy="${i}">${money(C.avatarPrice)}</button>`}</div>`;
+      }).join('')}</div>
+      <p class="test">Test mode: purchases unlock instantly and aren’t charged. They never come out of your poker balance.</p>
+    </section>
+  </div>`;
+  $('#pg-back').onclick = goLobby;
+  const j = $('#club-join'); if (j) j.onclick = () => send({ t: 'club', action: 'join' });
+  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to The Lounge theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
+  app.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
+    if (b.dataset.locked) { toast('That theme comes with Pokr Club'); return; }
+    send({ t: 'setTheme', theme: b.dataset.theme });
+  });
+  app.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => send({ t: 'buyAvatar', a: +b.dataset.buy }));
+}
+
+/* ---------------- Cashier ---------------- */
+function feeFor(amount, speed) {
+  const F = S.catalog && S.catalog.fees;
+  if (speed !== 'instant' || !F) return 0;
+  return Math.max(F.instantMinCents, Math.round(amount * F.instantPct / 100));
+}
+function renderCashier(tab) {
+  S.view = 'cashier';
+  if (tab) S.cashTab = tab;
+  const me = S.me, C = S.catalog;
+  if (!me || !C) { goLobby(); return; }
+  const dep = S.cashTab !== 'withdraw';
+  const F = C.fees;
+  const txs = me.transactions || [];
+  const pending = txs.filter(t => t.status === 'pending');
+  app.innerHTML = `
+  <div class="page">
+    ${pageBar('Cashier')}
+    <section class="panel bank">
+      <span class="lbl">Balance</span>
+      <span class="num big">${money(me.bankroll)}</span>
+      ${pending.length ? `<span class="wait">${pending.length} transfer${pending.length > 1 ? 's' : ''} on the way</span>` : ''}
+    </section>
+    <form class="panel cashier" id="cash" novalidate>
+      <div class="seg2" role="tablist">
+        <button type="button" role="tab" aria-selected="${dep}" data-tab="deposit">Deposit</button>
+        <button type="button" role="tab" aria-selected="${!dep}" data-tab="withdraw">Withdraw</button>
+      </div>
+      <div class="field"><label class="lbl" for="cash-amt">Amount</label>
+        <div class="money-in"><span>$</span><input id="cash-amt" inputmode="decimal" autocomplete="off" placeholder="0" value="${S.cashAmt || ''}"></div></div>
+      <div class="quick">${[20, 50, 100, 250].map(v => `<button type="button" class="btn small" data-q="${v}">$${v}</button>`).join('')}</div>
+      <div class="speeds" role="radiogroup" aria-label="Speed">
+        <label class="speed"><input type="radio" name="speed" value="standard" ${S.cashSpeed !== 'instant' ? 'checked' : ''}><span class="sp-name">Standard</span><span class="sp-fee free">Free</span><span class="sp-time">1–3 business days</span></label>
+        <label class="speed"><input type="radio" name="speed" value="instant" ${S.cashSpeed === 'instant' ? 'checked' : ''}><span class="sp-name">Instant</span><span class="sp-fee">${F.instantPct}% fee</span><span class="sp-time">Right away · min ${money(F.instantMinCents)}</span></label>
+      </div>
+      <div class="summary" id="cash-sum"></div>
+      <button class="btn primary" type="submit" id="cash-go">${dep ? 'Deposit' : 'Withdraw'}</button>
+      <p class="test">Test mode: no card or bank is charged, and standard transfers finish in about a minute. Real money needs ID verification and a payment partner before launch.</p>
+    </form>
+    <section class="panel">
+      <h2>History</h2>
+      ${txs.length ? `<div class="rows">${txs.map(t => `
+        <div class="txrow"><span class="txicon ${t.type}">${t.type === 'deposit' ? '↓' : '↑'}</span>
+          <div class="txt"><span class="nm">${t.type === 'deposit' ? 'Deposit' : 'Withdrawal'} · ${t.speed === 'instant' ? 'Instant' : 'Standard'}</span>
+          <span class="lbl">${new Date(t.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${t.fee ? ` · fee ${money(t.fee)}` : ''}</span></div>
+          <div class="txr"><span class="num ${t.type === 'deposit' ? 'up' : ''}">${t.type === 'deposit' ? '+' : '−'}${money(t.type === 'deposit' ? t.net : t.amount)}</span><span class="pill ${t.status}">${t.status === 'pending' ? 'On the way' : 'Done'}</span></div></div>`).join('')}</div>`
+        : '<p class="empty-note">No deposits or withdrawals yet.</p>'}
+    </section>
+  </div>`;
+  $('#pg-back').onclick = goLobby;
+  app.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => renderCashier(b.dataset.tab));
+  const amtIn = $('#cash-amt');
+  const cents = () => Math.round((parseFloat(String(amtIn.value).replace(/[^0-9.]/g, '')) || 0) * 100);
+  const speed = () => app.querySelector('input[name=speed]:checked').value;
+  const update = () => {
+    S.cashAmt = amtIn.value; S.cashSpeed = speed();
+    const a = cents(), fee = feeFor(a, speed());
+    const rows = dep
+      ? [['Amount', money(a)], ['Fee', fee ? money(fee) : 'Free'], ['Added to your balance', money(Math.max(0, a - fee))]]
+      : [['Amount', money(a)], ['Fee', fee ? money(fee) : 'Free'], ['Taken from your balance', money(a + fee)]];
+    $('#cash-sum').innerHTML = rows.map(([k, v], i) => `<div class="${i === 2 ? 'tot' : ''}"><span>${k}</span><span class="num">${v}</span></div>`).join('');
+    $('#cash-go').textContent = a ? `${dep ? 'Deposit' : 'Withdraw'} ${money(a)}` : (dep ? 'Deposit' : 'Withdraw');
+  };
+  amtIn.oninput = update;
+  app.querySelectorAll('input[name=speed]').forEach(r => r.onchange = update);
+  app.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { amtIn.value = b.dataset.q; update(); });
+  $('#cash').onsubmit = e => {
+    e.preventDefault();
+    const a = cents();
+    if (a < C.limits.minCents) { toast(`The minimum is ${money(C.limits.minCents)}`); return; }
+    send({ t: 'cashier', action: dep ? 'deposit' : 'withdraw', amount: a, speed: speed() });
+    S.cashAmt = '';
+  };
+  update();
 }
 
 /* ---------------- table ---------------- */
 function renderTableShell() {
+  S.skipAnim = true; S.boardHand = null; S.dealHand = null;
   app.innerHTML = `
   <div class="tbl">
     <header class="tbar">
@@ -452,6 +617,7 @@ function renderTable() {
   renderSession();
   renderStage();
   renderMine(false);
+  S.skipAnim = false;
   if (S.chatOpen && S.sideTab === 'hist') renderFeed();
 }
 
@@ -488,9 +654,19 @@ function renderStage() {
     const a = T.seats[T.toAct];
     msg = T.toAct === T.you ? 'Your move' : a ? `${esc(a.name)}’s turn` : '';
   }
+  // flop flips card by card; turn and river flip as they land (timed so re-renders don't restart it)
+  const now = performance.now();
+  if (S.boardHand !== T.handNo || T.board.length < S.boardSeen) { S.boardHand = T.handNo; S.boardSeen = S.skipAnim ? T.board.length : 0; S.flipAt = []; }
+  if (T.board.length > S.boardSeen) {
+    for (let i = S.boardSeen; i < T.board.length; i++) S.flipAt[i] = now + 60 + (i - S.boardSeen) * 190;
+    S.boardSeen = T.board.length;
+  }
   const board = [0, 1, 2, 3, 4].map(i => {
     const c = T.board[i];
-    return cardHTML(c === undefined ? undefined : c, hi && c !== undefined ? (hi.has(c) ? 'hi' : 'dim') : '');
+    const t0 = S.flipAt[i];
+    const anim = c !== undefined && t0 && now - t0 < 700;
+    const cls = (hi && c !== undefined ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' flip' : '');
+    return cardHTML(c === undefined ? undefined : c, cls, anim ? `animation-delay:${Math.round(t0 - now)}ms` : '');
   }).join('');
   let html = `<div class="rail"><div class="felt">
     <div class="street">${T.phase === 'play' || T.phase === 'done' ? esc(T.street) + ' · Hand ' + T.handNo : 'Table open'}</div>
@@ -544,47 +720,52 @@ function renderMine(force) {
   if (!el || !T) return;
   const me = T.you >= 0 ? T.seats[T.you] : null;
   const A = T.actions;
-  const key = JSON.stringify([T.you, T.phase, T.handNo, T.toAct, A, me && [me.chips, me.cards, me.folded, me.sittingOut, me.last, me.bet, me.dealt], T.myHand, S.me && S.me.bankroll, isWide()]);
+  const myTurn = T.phase === 'play' && T.toAct === T.you && A;
+  if (!myTurn) S.raiseOpen = false;
+  const key = JSON.stringify([T.you, T.phase, T.handNo, T.toAct, A, me && [me.chips, me.cards, me.folded, me.sittingOut, me.last, me.bet, me.dealt], T.myHand, S.me && S.me.bankroll, isWide(), S.raiseOpen]);
   if (!force && key === S.actionKey) return;
   S.actionKey = key;
 
   if (!me) {
     el.className = 'mine';
-    el.innerHTML = `<p class="wait">Tap an open seat to sit down. Buy-ins run ${fmt(T.buyIn.min)} to ${fmt(T.buyIn.max)}, and you have <span class="num" style="color:var(--brass)">${fmt(S.me ? S.me.bankroll : 0)}</span>.</p>`;
+    el.innerHTML = `<p class="wait">Tap an open seat to sit down. Buy-ins run ${money(T.buyIn.min)} to ${money(T.buyIn.max)}, and you have <span class="num" style="color:var(--brass)">${money(S.me ? S.me.bankroll : 0)}</span>.</p>`;
     return;
   }
 
-  const myTurn = T.phase === 'play' && T.toAct === T.you && A;
-  el.className = 'mine' + (myTurn ? ' turn' : '');
+  el.className = 'mine' + (myTurn ? ' turn' : '') + (S.raiseOpen ? ' picking' : '');
   const hi = bestSet(T);
-  const cards = me.cards.length ? me.cards.map(c => cardHTML(c, hi ? (hi.has(c) ? 'hi' : 'dim') : '')).join('') : '';
-  const myTurnNow = T.phase === 'play' && T.toAct === T.you && A;
+  // deal-in animation for your two cards, once per hand
+  const now = performance.now();
+  if (me.cards.length && S.dealHand !== T.handNo) { S.dealHand = T.handNo; S.dealAt = S.skipAnim ? 0 : now + 150; }
+  const cards = me.cards.length ? me.cards.map((c, i) => {
+    const t0 = S.dealAt ? S.dealAt + i * 120 : 0;
+    const anim = t0 && now - t0 < 500;
+    return cardHTML(c, (hi ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - now)}ms` : '');
+  }).join('') : '';
   const inHand = T.phase === 'play' && me.dealt && !me.folded;
   let wait = 'next hand in a moment';
   if (inHand) wait = me.allIn ? 'you’re all in' : 'waiting on the table…';
   else if (T.phase === 'waiting') wait = 'waiting for another player';
-  const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurnNow ? '' : wait));
+  const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurn ? '' : wait));
   let html = `<div class="hrow">
     ${cards ? `<div class="cards">${cards}</div>` : ''}
-    <div class="info"><span class="hand">${esc(handLine)}</span><span class="num">${fmt(me.chips)}</span></div>
+    <div class="info"><span class="hand">${esc(handLine)}</span><span class="num">${money(me.chips)}</span></div>
     ${myTurn ? '<span class="timer" id="timer"></span>' : ''}
   </div>`;
 
-  if (myTurn) {
-    const callLbl = A.canCheck ? 'Check' : (A.toCall >= me.chips ? `All in ${fmt(A.toCall)}` : `Call ${fmt(A.toCall)}`);
-    if (!S.raiseTo || S.raiseTo < A.minTo || S.raiseTo > A.maxTo) S.raiseTo = A.minTo;
+  if (myTurn && S.raiseOpen && A.canRaise) {
+    html += raisePickerHTML(T, A) + '<div class="turnbar" id="turnbar"></div>';
+  } else if (myTurn) {
+    const callLbl = A.canCheck ? 'Check' : (A.toCall >= me.chips ? `All in ${money(A.toCall)}` : `Call ${money(A.toCall)}`);
+    const raiseLbl = A.minTo >= A.maxTo ? `All in ${money(A.maxTo)}` : (A.currentBet === 0 ? 'Bet' : 'Raise');
     html += `<div class="acts">
         <button class="btn" id="a-fold" ${A.canCheck ? 'disabled' : ''}>Fold</button>
         <button class="btn" id="a-call">${callLbl}</button>
-        <button class="btn primary" id="a-raise" ${A.canRaise ? '' : 'disabled'}>Raise</button>
-      </div>
-      ${A.canRaise ? `<div class="raise">
-        <input type="range" id="a-slider" min="${A.minTo}" max="${A.maxTo}" step="1" value="${S.raiseTo}" aria-label="Raise amount">
-        <button class="textbtn" data-p="half">½ pot</button><button class="textbtn" data-p="pot">pot</button><button class="textbtn" data-p="all">all in</button>
-      </div>` : ''}<div class="turnbar" id="turnbar"></div>`;
-  } else if (me.chips === 0 && !(T.phase === 'play' && me.dealt && !me.folded)) {
+        <button class="btn primary" id="a-raise" ${A.canRaise ? '' : 'disabled'}>${raiseLbl}${A.minTo < A.maxTo ? ' <span class="caret">▴</span>' : ''}</button>
+      </div><div class="turnbar" id="turnbar"></div>`;
+  } else if (me.chips === 0 && !inHand) {
     html += `<div class="acts"><button class="btn primary" id="a-rebuy">Add chips</button></div>`;
-  } else if (me.sittingOut && !(T.phase === 'play' && me.dealt && !me.folded)) {
+  } else if (me.sittingOut && !inHand) {
     html += `<div class="acts"><button class="btn primary" id="a-back">I’m back</button></div>`;
   }
   el.innerHTML = html;
@@ -592,32 +773,67 @@ function renderMine(force) {
   const on = (id, fn) => { const b = el.querySelector('#' + id); if (b) b.onclick = fn; };
   on('a-fold', () => send({ t: 'act', kind: 'fold' }));
   on('a-call', () => send({ t: 'act', kind: A.canCheck ? 'check' : 'call' }));
-  on('a-raise', () => send({ t: 'act', kind: 'raise', amount: S.raiseTo }));
+  on('a-raise', () => {
+    if (A.minTo >= A.maxTo) { send({ t: 'act', kind: 'raise', amount: A.maxTo }); return; }
+    S.raiseOpen = true; S.raiseTo = A.minTo; renderMine(true);
+  });
   on('a-back', () => send({ t: 'sitout', out: false }));
   on('a-rebuy', () => openBuyIn(T.you, true));
-  if (myTurn && A.canRaise) {
-    const sl = el.querySelector('#a-slider');
-    sl.oninput = () => setRaise(+sl.value);
-    el.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
-      const potAfter = T.pot + A.toCall;
-      const map = { half: A.currentBet + potAfter / 2, pot: A.currentBet + potAfter, all: A.maxTo };
-      setRaise(map[b.dataset.p]);
-    });
-    setRaise(S.raiseTo);
-  }
+  if (myTurn && S.raiseOpen) bindRaisePicker(T, A);
 }
 
+// The raise picker: a big readout, poker-chip presets, +/- steps of one big blind, and a slider.
+function raiseTargets(T, A) {
+  const potAfterCall = T.pot + A.toCall;
+  const at = x => Math.max(A.minTo, Math.min(A.maxTo, Math.round(x / T.sb) * T.sb));
+  return [
+    ['min', 'Min', A.minTo, 'cream'],
+    ['half', '½ pot', at(A.currentBet + potAfterCall / 2), 'teal'],
+    ['3q', '¾ pot', at(A.currentBet + potAfterCall * 0.75), 'blue'],
+    ['pot', 'Pot', at(A.currentBet + potAfterCall), 'red'],
+    ['all', 'All in', A.maxTo, 'black'],
+  ];
+}
+function raisePickerHTML(T, A) {
+  if (!S.raiseTo || S.raiseTo < A.minTo || S.raiseTo > A.maxTo) S.raiseTo = A.minTo;
+  const verb = A.currentBet === 0 ? 'Bet' : 'Raise to';
+  return `<div class="picker" role="group" aria-label="${verb} amount">
+    <div class="pk-head"><button class="pk-back" id="pk-back" aria-label="Back to actions">‹ Back</button><span class="lbl">${verb}</span><span class="pk-bb" id="pk-bb"></span></div>
+    <div class="pk-amt">
+      <button class="step" id="pk-minus" aria-label="Less">−</button>
+      <span class="pk-val" id="pk-val" aria-live="polite"></span>
+      <button class="step" id="pk-plus" aria-label="More">+</button>
+    </div>
+    <div class="pk-chips">${raiseTargets(T, A).map(([k, l, v, col]) => `<button class="pchip ${col}" data-v="${v}" aria-label="${l}, ${money(v)}"><span class="disc">${l}</span><span class="amt">${money(v)}</span></button>`).join('')}</div>
+    <input type="range" class="pk-slider" id="pk-slider" min="${A.minTo}" max="${A.maxTo}" step="1" value="${S.raiseTo}" aria-label="${verb} amount">
+    <button class="btn primary pk-go" id="pk-go"></button>
+  </div>`;
+}
+function bindRaisePicker(T, A) {
+  $('#pk-back').onclick = () => { S.raiseOpen = false; renderMine(true); };
+  $('#pk-minus').onclick = () => setRaise(S.raiseTo - T.bb);
+  $('#pk-plus').onclick = () => setRaise(S.raiseTo + T.bb);
+  $('#pk-slider').oninput = e => setRaise(+e.target.value);
+  document.querySelectorAll('.pchip').forEach(b => b.onclick = () => setRaise(+b.dataset.v));
+  $('#pk-go').onclick = () => { send({ t: 'act', kind: 'raise', amount: S.raiseTo }); S.raiseOpen = false; };
+  setRaise(S.raiseTo);
+}
 function setRaise(v) {
-  const A = S.table && S.table.actions;
+  const T = S.table, A = T && T.actions;
   if (!A) return;
   v = Math.round(v);
-  const step = S.table.sb;
-  if (v < A.maxTo) v = Math.round(v / step) * step;
+  if (v < A.maxTo) v = Math.round(v / T.sb) * T.sb;
   v = Math.max(A.minTo, Math.min(A.maxTo, v));
   S.raiseTo = v;
-  const sl = $('#a-slider'); if (sl && +sl.value !== v) sl.value = v;
-  const b = $('#a-raise');
-  if (b) b.textContent = v === A.maxTo ? `All in ${fmt(v)}` : (A.currentBet === 0 ? `Bet ${fmt(v)}` : `Raise ${fmt(v)}`);
+  const sl = $('#pk-slider'); if (sl && +sl.value !== v) sl.value = v;
+  const val = $('#pk-val'); if (val) val.textContent = money(v);
+  const bb = $('#pk-bb'); if (bb) bb.textContent = `${(v / T.bb).toFixed(v % T.bb ? 1 : 0)} BB`;
+  document.querySelectorAll('.pchip').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  const go = $('#pk-go');
+  if (go) go.textContent = v === A.maxTo ? `All in · ${money(v)}` : `${A.currentBet === 0 ? 'Bet' : 'Raise to'} ${money(v)}`;
+  const minus = $('#pk-minus'), plus = $('#pk-plus');
+  if (minus) minus.disabled = v <= A.minTo;
+  if (plus) plus.disabled = v >= A.maxTo;
 }
 
 function showReaction(m) {

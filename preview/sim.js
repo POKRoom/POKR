@@ -4,6 +4,7 @@
   const { Table } = require('./engine');
   const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
   const { money } = require('./cards');
+  const shop = require('./shop');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
   const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
   const BANTER = {
@@ -26,9 +27,10 @@
     const now = Date.now();
     const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
     const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
-    return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW };
+    return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
   };
   const sendMe = () => { if (db.user) out({ t: 'me', user: meOf(db.user) }); };
+  const sendCatalog = () => out({ t: 'catalog', catalog: shop.catalog() });
   function leaderboard() {
     const rows = [];
     const u = db.user;
@@ -100,7 +102,7 @@
         db.user.bankroll += left; db.user.atTables = {}; persist();
       }
       if (!db.user || db.token !== m.token) return out({ t: 'needProfile' });
-      sendMe();
+      sendMe(); sendCatalog();
     },
     // Preview accounts live only in this browser; the real server hashes passwords and checks them properly.
     signup(c, m) {
@@ -113,7 +115,7 @@
       db.token = Math.random().toString(36).slice(2);
       persist();
       out({ t: 'token', token: db.token });
-      sendMe();
+      sendMe(); sendCatalog();
     },
     login(c, m) {
       const email = String(m.email || '').trim().toLowerCase();
@@ -121,19 +123,33 @@
       db.token = Math.random().toString(36).slice(2);
       persist();
       out({ t: 'token', token: db.token });
-      sendMe();
+      sendMe(); sendCatalog();
     },
     logout(c) { if (c.code) { const t = tables.get(c.code); if (t) t.stand(db.user.id); c.code = null; } db.token = null; persist(); out({ t: 'needProfile' }); },
     profile(c, m) {
       if (!db.user) return;
       const name = String(m.name || '').trim().slice(0, 16);
       if (name.length < 2) return out({ t: 'error', message: 'Pick a name with at least 2 characters' });
+      if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pokr Club or the shop' });
       db.user.name = name; db.user.avatar = m.avatar;
       for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = m.avatar; hooks.onChange(t); } }
       persist();
       sendMe();
     },
     lobby() { out(lobby()); },
+    club(c, m) {
+      const r = shop.club(db.user, m.action); if (r.error) return out({ t: 'error', message: r.error });
+      if (r.resetAvatar) for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
+      persist(); sendMe(); out({ t: 'notice', message: m.action === 'join' ? 'Welcome to Pokr Club' : 'Membership canceled' });
+    },
+    buyAvatar(c, m) { const r = shop.buyAvatar(db.user, Number(m.a)); if (r.error) return out({ t: 'error', message: r.error }); persist(); sendMe(); out({ t: 'notice', message: 'Avatar unlocked' }); },
+    setTheme(c, m) { const r = shop.setTheme(db.user, String(m.theme)); if (r.error) return out({ t: 'error', message: r.error }); persist(); sendMe(); },
+    cashier(c, m) {
+      const r = shop.cashier(db.user, { action: m.action, amount: m.amount, speed: m.speed }); if (r.error) return out({ t: 'error', message: r.error });
+      persist(); sendMe();
+      const verb = r.tx.type === 'deposit' ? 'Deposit' : 'Withdrawal';
+      out({ t: 'notice', message: r.tx.status === 'completed' ? `${verb} of ${money(r.tx.amount)} done` : `${verb} of ${money(r.tx.amount)} is on its way` });
+    },
     refill() {
       const u = db.user;
       if (!meOf(u).canRefill) return out({ t: 'error', message: `Reloads are for players under ${money(REFILL_BELOW)}` });
@@ -219,5 +235,6 @@
     _recv(m) { const data = JSON.stringify(m); setTimeout(() => { if (this.onmessage) this.onmessage({ data }); }, 0); }
     close() {}
   }
+  setInterval(() => { if (db.user && shop.settle(db.user).length) { persist(); sendMe(); } }, 3000);
   window.PokrSocket = PokrSocket;
 })();
