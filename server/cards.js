@@ -114,4 +114,10 @@ function describe(v) {
   }
 }
 
-module.exports = { describe, newDeck, eval5, best, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };
+// Amounts are whole cents everywhere; this is the one place they become dollars for people to read.
+function money(c) {
+  const d = c / 100;
+  return '$' + d.toLocaleString('en-US', Number.isInteger(d) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+module.exports = { money, describe, newDeck, eval5, best, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };

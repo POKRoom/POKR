@@ -2,9 +2,10 @@
 // Same messages, same game engine; one local player, and the other seats are bots.
 (function () {
   const { Table } = require('./engine');
-  const STAKES = { micro: [5, 10], low: [10, 20], mid: [25, 50], high: [50, 100] };
+  const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
+  const { money } = require('./cards');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
-  const START = 10000, REFILL_BELOW = 1000, KEY = 'pokr.preview.v1';
+  const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
   const BANTER = {
     win: ['ship it', 'nh to me', 'too easy', 'thank you very much', 'read you like a book'],
     lose: ['unreal', 'how did you call that', 'one more and I quit', 'rigged', 'ok ok ok'],
@@ -16,12 +17,16 @@
   if (!db || !db.user) db = { user: null, token: null, bots: {} };
   const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch { /* storage blocked */ } };
 
+  const pwHash = p => { let h = 5381; for (const ch of String(p || '')) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };
   const tables = new Map();
   let client = null;
   const out = m => { if (client) client._recv(m); };
   const meOf = u => {
     const atTables = Object.values(u.atTables).reduce((a, b) => a + b, 0);
-    return { id: u.id, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, canRefill: u.bankroll + atTables < REFILL_BELOW };
+    const now = Date.now();
+    const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
+    const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
+    return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW };
   };
   const sendMe = () => { if (db.user) out({ t: 'me', user: meOf(db.user) }); };
   function leaderboard() {
@@ -60,6 +65,7 @@
           st.hands++; st.net += r.delta;
           if (r.won > 0 && r.delta > 0) st.won++;
           if (r.won > st.biggestPot) st.biggestPot = r.won;
+          (db.user.hist || (db.user.hist = [])).push({ ts: Date.now(), d: r.delta, w: r.won }); if (db.user.hist.length > 3000) db.user.hist.shift();
           db.user.atTables[t.code] = r.chips;
         } else if (r.kind === 'bot') {
           const s = t.seats[r.seat];
@@ -96,28 +102,45 @@
       if (!db.user || db.token !== m.token) return out({ t: 'needProfile' });
       sendMe();
     },
+    // Preview accounts live only in this browser; the real server hashes passwords and checks them properly.
+    signup(c, m) {
+      const name = String(m.name || '').trim().slice(0, 16);
+      const email = String(m.email || '').trim().toLowerCase();
+      if (name.length < 2) return out({ t: 'authError', message: 'Pick a name with at least 2 characters' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return out({ t: 'authError', message: 'Enter a valid email address' });
+      if (String(m.password || '').length < 8) return out({ t: 'authError', message: 'Use a password with at least 8 characters' });
+      db.user = { id: 'me', email, pw: pwHash(m.password), name, avatar: m.avatar, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
+      db.token = Math.random().toString(36).slice(2);
+      persist();
+      out({ t: 'token', token: db.token });
+      sendMe();
+    },
+    login(c, m) {
+      const email = String(m.email || '').trim().toLowerCase();
+      if (!db.user || db.user.email !== email || db.user.pw !== pwHash(m.password)) return out({ t: 'authError', message: 'That email and password don’t match' });
+      db.token = Math.random().toString(36).slice(2);
+      persist();
+      out({ t: 'token', token: db.token });
+      sendMe();
+    },
+    logout(c) { if (c.code) { const t = tables.get(c.code); if (t) t.stand(db.user.id); c.code = null; } db.token = null; persist(); out({ t: 'needProfile' }); },
     profile(c, m) {
+      if (!db.user) return;
       const name = String(m.name || '').trim().slice(0, 16);
       if (name.length < 2) return out({ t: 'error', message: 'Pick a name with at least 2 characters' });
-      if (db.user) {
-        db.user.name = name; db.user.avatar = m.avatar;
-        for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = m.avatar; hooks.onChange(t); } }
-      } else {
-        db.user = { id: 'me', name, avatar: m.avatar, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 } };
-        db.token = Math.random().toString(36).slice(2);
-        out({ t: 'token', token: db.token });
-      }
+      db.user.name = name; db.user.avatar = m.avatar;
+      for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = m.avatar; hooks.onChange(t); } }
       persist();
       sendMe();
     },
     lobby() { out(lobby()); },
     refill() {
       const u = db.user;
-      if (!meOf(u).canRefill) return out({ t: 'error', message: `Free chips are for players under ${REFILL_BELOW}` });
+      if (!meOf(u).canRefill) return out({ t: 'error', message: `Reloads are for players under ${money(REFILL_BELOW)}` });
       u.bankroll = START; persist(); sendMe();
     },
     create(c, m) {
-      const st = STAKES[m.stakes] || STAKES.low;
+      const st = STAKES[m.stakes] || STAKES['10-25'];
       const code = makeCode();
       const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate }, hooks);
       tables.set(code, t);
@@ -136,7 +159,7 @@
     sit(c, m) {
       const t = tables.get(c.code), u = db.user;
       const buyIn = Math.floor(Number(m.buyIn));
-      if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return out({ t: 'error', message: `Buy in between ${t.buyInMin} and ${t.buyInMax}` });
+      if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return out({ t: 'error', message: `Buy in between ${money(t.buyInMin)} and ${money(t.buyInMax)}` });
       if (buyIn > u.bankroll) return out({ t: 'error', message: 'You don’t have that many chips in your bankroll' });
       const err = t.sit({ userId: u.id, name: u.name, avatar: u.avatar }, Number(m.seat), buyIn);
       if (err) return out({ t: 'error', message: err });
@@ -189,7 +212,7 @@
       let m; try { m = JSON.parse(raw); } catch { return; }
       setTimeout(() => {
         if (!H[m.t]) return;
-        if (m.t !== 'hello' && m.t !== 'profile' && !db.user) return out({ t: 'needProfile' });
+        if (!['hello', 'signup', 'login'].includes(m.t) && (!db.user || !db.token)) return out({ t: 'needProfile' });
         try { H[m.t](this, m); } catch (e) { console.error(e); }
       }, 0);
     }

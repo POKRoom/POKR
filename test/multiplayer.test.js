@@ -42,7 +42,7 @@ function client(name) {
       if (m.t === 'error') c.errors.push(m.message);
       c.handlers.forEach(h => h(m));
     };
-    ws.onopen = () => { c.send({ t: 'hello' }); resolve(c); };
+    ws.onopen = () => resolve(c);
     ws.onerror = reject;
   });
 }
@@ -56,20 +56,38 @@ const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn()) { 
 (async () => {
   await new Promise(r => srv.stdout.once('data', r));
   const [a, b, c] = await Promise.all(['Ana', 'Ben', 'Cy'].map(client));
-  for (const [i, p] of [a, b, c].entries()) p.send({ t: 'profile', name: p.name, avatar: { a: i, c: i } });
+  for (const [i, p] of [a, b, c].entries()) p.send({ t: 'signup', name: p.name, email: p.name.toLowerCase() + '@test.local', password: 'test-password-' + i, avatar: { a: i, c: i } });
   await until(() => a.me && b.me && c.me);
-  assert.strictEqual(a.me.bankroll, 10000);
+  assert.strictEqual(a.me.bankroll, 100000);
+
+  // accounts: duplicate email, wrong password, short password are refused; a real login works; logout ends the session
+  const x = await client('X');
+  const authErrs = [];
+  x.on(m => { if (m.t === 'authError') authErrs.push(m.message); });
+  x.send({ t: 'signup', name: 'Copy', email: 'ANA@test.local', password: 'whatever123', avatar: { a: 1, c: 1 } });
+  x.send({ t: 'signup', name: 'Shorty', email: 'short@test.local', password: 'short', avatar: { a: 1, c: 1 } });
+  x.send({ t: 'login', email: 'ana@test.local', password: 'wrong-password' });
+  await until(() => authErrs.length >= 3);
+  x.send({ t: 'create', name: 'nope' });
+  x.send({ t: 'login', email: 'Ana@Test.local', password: 'test-password-0' });
+  await until(() => x.me && x.me.id === a.me.id);
+  let tok; x.on(m => { if (m.t === 'token') tok = m.token; });
+  x.send({ t: 'logout' });
+  await wait(100);
+  const y = await client('Y'); let yNeeds = false; y.on(m => { if (m.t === 'needProfile') yNeeds = true; });
+  y.send({ t: 'hello', token: 'not-a-real-token' });
+  await until(() => yNeeds);
 
   let code;
   a.on(m => { if (m.t === 'created') code = m.code; });
-  a.send({ t: 'create', name: 'Test night', stakes: 'low' });
+  a.send({ t: 'create', name: 'Test night', stakes: '10-25' });
   await until(() => code);
   for (const p of [a, b, c]) p.send({ t: 'join', code });
   await until(() => a.state && b.state && c.state);
   a.send({ t: 'sit', seat: 0, buyIn: 2000 });
   b.send({ t: 'sit', seat: 2, buyIn: 1500 });
   c.send({ t: 'sit', seat: 4, buyIn: 1000 });
-  await until(() => a.me.bankroll === 8000 && b.me.bankroll === 8500 && c.me.bankroll === 9000);
+  await until(() => a.me.bankroll === 98000 && b.me.bankroll === 98500 && c.me.bankroll === 99000);
 
   // illegal things get refused
   b.send({ t: 'sit', seat: 1, buyIn: 1000 });
@@ -110,7 +128,7 @@ const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn()) { 
   assert.strictEqual(a.leaks + b.leaks + c.leaks, 0, 'no hidden cards leaked');
   // a spectator who never sat sees no hole cards at all
   const d = await client('Dee');
-  d.send({ t: 'profile', name: 'Dee', avatar: { a: 5, c: 5 } });
+  d.send({ t: 'signup', name: 'Dee', email: 'dee@test.local', password: 'dee-password', avatar: { a: 5, c: 5 } });
   await until(() => d.me);
   d.send({ t: 'join', code });
   await until(() => d.state);
@@ -121,7 +139,8 @@ const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn()) { 
   await until(() => a.state.seats.every(s => !s), 20000);
   await wait(300);
   const total = a.me.bankroll + b.me.bankroll + c.me.bankroll;
-  assert.strictEqual(total, 30000, `chips conserved (got ${total})`);
+  assert.strictEqual(total, 300000, `chips conserved (got ${total})`);
+  assert.ok(a.me.periods && a.me.periods.day.hands === a.me.stats.hands, 'period stats track hands');
   const stats = [a, b, c].map(p => p.me.stats);
   assert.ok(stats.every(s => s.hands >= HANDS - 1), 'hands counted');
   assert.strictEqual(stats.reduce((x, s) => x + s.net, 0), 0, 'net winnings sum to zero');
@@ -129,7 +148,7 @@ const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn()) { 
   assert.ok(ledger.some(l => l.type === 'buyin') && ledger.some(l => l.type === 'cashout'), 'ledger written');
 
   console.log(`played ${a.state.handNo} hands over WebSockets; bankrolls: ${[a, b, c].map(p => `${p.name} ${p.me.bankroll}`).join(', ')}`);
-  console.log('no card leaks, chips conserved, chat/reactions delivered, ledger written');
+  console.log('accounts checked; no card leaks, chips conserved, chat/reactions delivered, ledger written');
   console.log('multiplayer test passed');
   srv.kill(); process.exit(0);
 })().catch(e => { console.error(e); srv.kill(); process.exit(1); });

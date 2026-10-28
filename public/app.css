@@ -83,7 +83,7 @@ h2 { font-family: var(--serif); font-weight: 600; font-size: 22px; letter-spacin
 
 /* ---------- panels, inputs ---------- */
 .panel { background: var(--panel); border: 1px solid var(--oxblood); border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-input[type=text], input:not([type]) {
+input[type=text], input[type=email], input[type=password], input:not([type]) {
   width: 100%; min-width: 0; background: var(--velvet); border: 1px solid var(--hairline); border-radius: 12px; padding: 13px 14px; font-size: 15px;
 }
 input::placeholder { color: var(--muted); }
@@ -118,7 +118,19 @@ input[type=range] { width: 100%; accent-color: var(--marquee); }
 /* checker trim */
 .checker { height: 12px; background: repeating-conic-gradient(var(--velvet) 0 25%, var(--paper) 0 50%) 0 0 / 12px 12px; }
 
-/* ---------- welcome ---------- */
+/* ---------- welcome / auth ---------- */
+.seg2 { display: grid; grid-template-columns: 1fr 1fr; background: var(--velvet); border: 1px solid var(--hairline); border-radius: 999px; padding: 3px; }
+.seg2 button { border: 0; background: none; border-radius: 999px; padding: 9px 6px; font-weight: 600; font-size: 14px; color: var(--muted); }
+.seg2 button[aria-selected=true] { background: var(--panel-hi); color: var(--cream); box-shadow: inset 0 0 0 1px rgba(217, 168, 78, .5); }
+.formerr { margin: 0; color: #F08A8F; font-size: 13.5px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.bank-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.period select {
+  appearance: none; -webkit-appearance: none; background: rgba(20, 10, 11, .6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23D9A84E' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 11px center;
+  border: 1px solid rgba(217, 168, 78, .45); border-radius: 999px; color: var(--cream); font-family: var(--sans); font-size: 12.5px; font-weight: 600; padding: 6px 30px 6px 12px; cursor: pointer;
+}
+.period select option { background: var(--panel); }
+
 .welcome { max-width: 440px; margin: 0 auto; padding-block: 7vh 40px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .tagline { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 18px; margin: 0; text-align: center; }
 .fan { position: relative; width: 240px; height: 110px; }
@@ -137,7 +149,7 @@ input[type=range] { width: 100%; accent-color: var(--marquee); }
 .me-chip .num { color: var(--brass); font-size: 13px; }
 .lobby-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 @media (min-width: 820px) {
-  .lobby-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-areas: "start bank" "join board" "open board"; align-items: start; }
+  .lobby-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-areas: "open bank" "start board" "join board"; align-items: start; }
   .a-bank { grid-area: bank; } .a-start { grid-area: start; } .a-join { grid-area: join; } .a-open { grid-area: open; } .a-board { grid-area: board; }
 }
 .bank { background: linear-gradient(135deg, #3A0E12, #1C0C0C); border-color: rgba(217, 168, 78, .45); }
@@ -146,7 +158,7 @@ input[type=range] { width: 100%; accent-color: var(--marquee); }
 .stat b { display: block; font-family: var(--mono); font-weight: 500; font-size: 18px; }
 .stat span { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .up { color: var(--teal); } .down { color: #E2434D; }
-.books { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.books { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .book { border: 0; padding: 0; border-radius: 8px; overflow: hidden; background: var(--paper); display: flex; flex-direction: column; opacity: .82; transition: opacity .15s, box-shadow .15s; }
 .book .cover { background: var(--oxblood); color: var(--paper); font-family: var(--mono); font-weight: 500; font-size: 14px; padding: 11px 2px 9px; }
 .book .strike { height: 5px; background: var(--rail); }

@@ -1,7 +1,7 @@
 'use strict';
 // The table engine. The server is the only place cards exist: clients get a personalized view
 // with their own hole cards and nobody else's until showdown.
-const { newDeck, best, handName, describe, cardTxt } = require('./cards');
+const { newDeck, best, handName, describe, cardTxt, money } = require('./cards');
 const bots = require('./bots');
 
 const handReset = () => ({
@@ -85,7 +85,7 @@ class Table {
       kind: 'human', userId: player.userId, name: player.name, avatar: player.avatar,
       chips, buyIns: chips, sittingOut: false, connected: true, timeouts: 0, leaving: false, disconnectedAt: 0,
     }, handReset());
-    this._log(`${player.name} sits down with ${chips}`);
+    this._log(`${player.name} sits down with ${money(chips)}`);
     this.maybeStart();
     this._changed();
     return null;
@@ -153,7 +153,7 @@ class Table {
     s.sittingOut = false;
     s.timeouts = 0;
     if (s.last === 'Busted') s.last = '';
-    this._log(`${s.name} adds ${amount} chips`);
+    this._log(`${s.name} adds ${money(amount)}`);
     this.maybeStart();
     this._changed();
     return null;
@@ -324,8 +324,8 @@ class Table {
     else if (kind === 'check') { s.last = 'Check'; this._log(`${s.name} checks`); }
     else if (kind === 'call') {
       const a = this._put(s, toCall);
-      s.last = s.allIn ? 'All in' : `Call ${a}`;
-      this._log(`${s.name} calls ${a}${s.allIn ? ' and is all in' : ''}`);
+      s.last = s.allIn ? 'All in' : `Call ${money(a)}`;
+      this._log(`${s.name} calls ${money(a)}${s.allIn ? ' and is all in' : ''}`);
     } else {
       const prev = this.currentBet;
       this._put(s, amount - s.bet);
@@ -338,8 +338,8 @@ class Table {
         this.currentBet = s.bet;
         this.raises++;
       }
-      s.last = s.allIn ? 'All in' : (prev === 0 ? `Bet ${s.bet}` : `Raise ${s.bet}`);
-      this._log(`${s.name} ${prev === 0 ? 'bets' : 'raises to'} ${s.bet}${s.allIn ? ' (all in)' : ''}`);
+      s.last = s.allIn ? 'All in' : (prev === 0 ? `Bet ${money(s.bet)}` : `Raise ${money(s.bet)}`);
+      this._log(`${s.name} ${prev === 0 ? 'bets' : 'raises to'} ${money(s.bet)}${s.allIn ? ' (all in)' : ''}`);
     }
     if (!auto && s.kind === 'human') s.timeouts = 0;
     s.acted = true;
@@ -379,7 +379,7 @@ class Table {
     w.chips += amt;
     w.won = amt;
     this.result = { foldWin: true, winners: [{ seat: this.seats.indexOf(w), name: w.name, amount: amt, hand: null }] };
-    this._log(`${w.name} wins ${amt}`);
+    this._log(`${w.name} wins ${money(amt)}`);
     this.endHand();
   }
 
@@ -407,7 +407,7 @@ class Table {
     });
     for (const s of contenders) this._log(`${s.name} shows ${s.hand.map(cardTxt).join(' ')}: ${handName(s.score)}`);
     const winners = contenders.filter(s => s.won > 0);
-    for (const w of winners) this._log(`${w.name} wins ${w.won}`);
+    for (const w of winners) this._log(`${w.name} wins ${money(w.won)}`);
     this.result = {
       foldWin: false,
       winners: winners.map(w => ({ seat: this.seats.indexOf(w), name: w.name, amount: w.won, hand: describe(w.score) })),

@@ -4,7 +4,8 @@
 const AVATARS = ['🦊', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦉', '🐙', '🦈', '🐺', '🐰', '🦄', '🐲', '👽', '🤠'];
 const COLORS = ['#C8202B', '#D9A84E', '#2E8F86', '#3E5FB0', '#8E3FA0', '#D0456E', '#5E9A4E', '#7A6A62'];
 const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
-const STAKES = [['micro', 5, 10], ['low', 10, 20], ['mid', 25, 50], ['high', 50, 100]];
+// blinds in cents, matching the server
+const STAKES = [['5-10', 5, 10], ['10-25', 10, 25], ['25-50', 25, 50], ['50-100', 50, 100], ['100-200', 100, 200], ['200-500', 200, 500]];
 const SUIT_NAME = ['spades', 'hearts', 'diamonds', 'clubs'];
 const SUIT_SVG = [
   '<path d="M12 2C12 2 4 9 4 13.5C4 16 6 18 8.5 18C10 18 11.2 17.3 11.6 16.5L10.3 22H13.7L12.4 16.5C12.8 17.3 14 18 15.5 18C18 18 20 16 20 13.5C20 9 12 2 12 2Z"/>',
@@ -26,8 +27,14 @@ const ICON = {
 const $ = s => document.querySelector(s);
 const app = $('#app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmt = n => Number(n || 0).toLocaleString('en-US');
-const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
+// all amounts are whole cents; show them as dollars
+const money = c => { const d = (c || 0) / 100; return '$' + d.toLocaleString('en-US', Number.isInteger(d) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+const fmt = money;
+const signedMoney = n => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n));
+const signed = signedMoney;
+const count = n => Number(n || 0).toLocaleString('en-US');
+const blindAmt = c => (c < 100 ? c + '¢' : money(c));
+const blinds = (sb, bb) => `${blindAmt(sb)}/${blindAmt(bb)}`;
 const isWide = () => matchMedia('(min-width: 700px)').matches;
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -36,7 +43,7 @@ const store = {
 
 const S = {
   view: 'boot', me: null, lobby: null, table: null, tableAt: 0, chat: [], token: store.get('pokr.token'),
-  raiseTo: 0, actionKey: '', sideTab: 'chat', stakes: 'low', isPrivate: false, chatOpen: false, menuOpen: false, unread: false,
+  raiseTo: 0, actionKey: '', sideTab: 'chat', stakes: '10-25', period: store.get('pokr.period') || 'day', isPrivate: false, chatOpen: false, menuOpen: false, unread: false,
   draft: Math.floor(Math.random() * AVATARS.length),
 };
 
@@ -76,10 +83,11 @@ function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 
 function onMessage(m) {
   switch (m.t) {
-    case 'needProfile': S.me = null; S.view = 'profile'; renderProfile(false); break;
-    case 'token': S.token = m.token; store.set('pokr.token', m.token); break;
+    case 'needProfile': S.me = null; closeChat(); renderAuth(store.get('pokr.hadAccount') ? 'login' : 'signup'); break;
+    case 'authError': showAuthError(m.message); break;
+    case 'token': S.token = m.token; store.set('pokr.token', m.token); store.set('pokr.hadAccount', '1'); break;
     case 'me': {
-      const entering = S.view === 'boot' || S.view === 'profile';
+      const entering = S.view === 'boot' || S.view === 'auth';
       S.me = m.user;
       if (entering) enterApp();
       else if (S.view === 'table') {
@@ -132,72 +140,135 @@ window.addEventListener('popstate', () => {
   else if (S.view === 'table') { send({ t: 'leave' }); S.view = 'lobby'; S.table = null; closeChat(); renderLobby(); }
 });
 
-/* ---------------- welcome / profile ---------------- */
-function renderProfile(editing) {
-  if (editing && S.me) S.draft = S.me.avatar.a;
-  const fan = [[0, 12, -16, 4], [0, 11 + 13, -5, 1], [0, 10 + 26, 6, 1], [0, 9 + 39, 17, 4]]
-    .map(([, c, rot, y], i) => cardHTML(c).replace('class="pc', `style="left:${22 + i * 44}px;top:${y + 6}px;transform:rotate(${rot}deg)" class="pc`)).join('');
-  app.innerHTML = `
-  <main class="welcome">
-    <h1 class="marquee xl">Pokr</h1>
-    <p class="tagline">${editing ? 'Freshen up before the next hand.' : 'The card room for you and your friends.'}</p>
-    ${editing ? '' : `<div class="fan" aria-hidden="true">${fan}</div>`}
-    <form class="panel pf" id="pf">
-      <h2>${editing ? 'Your profile' : 'Pull up a chair'}</h2>
-      <div class="field"><label class="lbl" for="pf-name">Name</label>
-        <input id="pf-name" maxlength="16" autocomplete="nickname" placeholder="What should the table call you?" value="${esc(editing && S.me ? S.me.name : '')}"></div>
-      <div class="field"><span class="lbl">Avatar</span>
-        <div class="ava-grid">${AVATARS.map((g, i) => `<button type="button" data-a="${i}" aria-pressed="${i === S.draft}" style="--ac:${COLORS[i % 8]}" aria-label="Avatar ${i + 1}">${g}</button>`).join('')}</div></div>
-      <button class="btn primary" type="submit">${editing ? 'Save' : 'Take a seat'}</button>
-      ${editing ? '<button class="btn" type="button" id="pf-cancel">Cancel</button>' : ''}
-    </form>
-    <p class="fine">${editing ? '' : 'You start with 10,000 play chips. '}Play chips only, no real money.</p>
-  </main>`;
+/* ---------------- sign up / log in / profile ---------------- */
+function avatarGrid() {
+  return `<div class="ava-grid">${AVATARS.map((g, i) => `<button type="button" data-a="${i}" aria-pressed="${i === S.draft}" style="--ac:${COLORS[i % 8]}" aria-label="Avatar ${i + 1}">${g}</button>`).join('')}</div>`;
+}
+function bindAvatarGrid() {
   app.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
     S.draft = +b.dataset.a;
     app.querySelectorAll('[data-a]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.a === S.draft));
   });
-  if (editing) $('#pf-cancel').onclick = () => goLobby();
+}
+function renderAuth(mode) {
+  S.view = 'auth'; S.authMode = mode;
+  const fan = [12, 24, 36, 48].map((c, i) => cardHTML(c).replace('class="pc', `style="left:${22 + i * 44}px;top:${[4, 1, 1, 4][i] + 6}px;transform:rotate(${[-16, -5, 6, 17][i]}deg)" class="pc`)).join('');
+  const signup = mode === 'signup';
+  app.innerHTML = `
+  <main class="welcome">
+    <h1 class="marquee xl">Pokr</h1>
+    <p class="tagline">The card room for you and your friends.</p>
+    <div class="fan" aria-hidden="true">${fan}</div>
+    <form class="panel pf" id="auth" novalidate>
+      <div class="seg2" role="tablist">
+        <button type="button" role="tab" aria-selected="${signup}" data-mode="signup">Create account</button>
+        <button type="button" role="tab" aria-selected="${!signup}" data-mode="login">Log in</button>
+      </div>
+      ${signup ? `<div class="field"><label class="lbl" for="au-name">Name at the table</label>
+        <input id="au-name" maxlength="16" autocomplete="nickname" placeholder="What should the table call you?"></div>` : ''}
+      <div class="field"><label class="lbl" for="au-email">Email</label>
+        <input id="au-email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div>
+      <div class="field"><label class="lbl" for="au-pass">Password</label>
+        <input id="au-pass" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? 'At least 8 characters' : 'Your password'}"></div>
+      ${signup ? `<div class="field"><span class="lbl">Avatar</span>${avatarGrid()}</div>` : ''}
+      <p class="formerr" id="au-err" role="alert" hidden></p>
+      <button class="btn primary" type="submit" id="au-go">${signup ? 'Create account' : 'Log in'}</button>
+    </form>
+    <p class="fine">${signup ? 'You start with $1,000 in play money. ' : ''}Play money only for now, no real money.</p>
+  </main>`;
+  app.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
+  if (signup) bindAvatarGrid();
+  $('#auth').onsubmit = e => {
+    e.preventDefault();
+    const email = $('#au-email').value.trim(), password = $('#au-pass').value;
+    const err = msg => { const el = $('#au-err'); el.textContent = msg; el.hidden = false; };
+    if (signup) {
+      const name = $('#au-name').value.trim();
+      if (name.length < 2) return err('Pick a name with at least 2 characters');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return err('Enter a valid email address');
+      if (password.length < 8) return err('Use a password with at least 8 characters');
+      send({ t: 'signup', name, email, password, avatar: { a: S.draft, c: S.draft % 8 } });
+    } else {
+      if (!email || !password) return err('Enter your email and password');
+      send({ t: 'login', email, password });
+    }
+    $('#au-go').disabled = true;
+  };
+  (signup ? $('#au-name') : $('#au-email')).focus();
+}
+function showAuthError(message) {
+  const el = $('#au-err');
+  if (!el) { toast(message); return; }
+  el.textContent = message; el.hidden = false;
+  const go = $('#au-go'); if (go) go.disabled = false;
+}
+
+function renderProfileEdit() {
+  S.view = 'profile-edit';
+  S.draft = S.me.avatar.a;
+  app.innerHTML = `
+  <main class="welcome">
+    <h1 class="marquee">Pokr</h1>
+    <form class="panel pf" id="pf">
+      <h2>Your profile</h2>
+      <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
+        <input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>
+      <div class="field"><span class="lbl">Avatar</span>${avatarGrid()}</div>
+      <div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>
+      <button class="btn primary" type="submit">Save</button>
+      <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button><button class="btn ghost" type="button" id="pf-logout">Log out</button></div>
+    </form>
+  </main>`;
+  bindAvatarGrid();
+  $('#pf-cancel').onclick = () => goLobby();
+  $('#pf-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; send({ t: 'logout' }); };
   $('#pf').onsubmit = e => {
     e.preventDefault();
     const name = $('#pf-name').value.trim();
     if (name.length < 2) { toast('Pick a name with at least 2 characters'); return; }
     send({ t: 'profile', name, avatar: { a: S.draft, c: S.draft % 8 } });
-    if (editing) goLobby();
+    goLobby();
   };
-  if (!editing) $('#pf-name').focus();
 }
 
 /* ---------------- lobby ---------------- */
+const PERIODS = [['day', 'Last 24 hours'], ['week', 'Last 7 days'], ['month', 'Last 30 days'], ['all', 'All time']];
 function renderLobby() {
   const me = S.me;
   if (!me) return;
   const L = S.lobby || { tables: [], leaderboard: [] };
-  const st = me.stats;
-  const winRate = st.hands ? Math.round((st.won / st.hands) * 100) : 0;
+  const per = (me.periods && me.periods[S.period]) || me.stats;
+  const winRate = per.hands ? Math.round((per.won / per.hands) * 100) : 0;
   app.innerHTML = `
   <div class="lobby">
     <div class="topbar">
       <h1 class="marquee" aria-label="Pokr">Pokr</h1>
-      <button class="me-chip" id="edit-me" title="Edit profile">${avatarHTML(me.avatar)}<span class="nm">${esc(me.name)}</span><span class="num">${fmt(me.bankroll)}</span></button>
+      <button class="me-chip" id="edit-me" title="Profile">${avatarHTML(me.avatar)}<span class="nm">${esc(me.name)}</span><span class="num">${money(me.bankroll)}</span></button>
     </div>
     <div class="lobby-grid">
+      <section class="panel a-open">
+        <h2>Open tables</h2>
+        ${L.tables.length ? `<div class="rows">${L.tables.map(t => `
+          <div class="trow"><span class="chip"></span><div class="txt"><span class="nm">${esc(t.name)}</span><span class="lbl">${blinds(t.sb, t.bb)} · ${t.players + t.bots}/${t.seats} seated</span></div><button class="btn ghost small" data-join="${t.code}">Join</button></div>`).join('')}</div>`
+          : '<p class="empty-note">No open tables right now. Start one below and send the link to your friends.</p>'}
+      </section>
       <section class="panel bank a-bank">
-        <span class="lbl">Bankroll${me.atTables ? ` · ${fmt(me.atTables)} at tables` : ''}</span>
-        <span class="num big">${fmt(me.bankroll)}</span>
+        <div class="bank-head"><span class="lbl">Bankroll${me.atTables ? ` · ${money(me.atTables)} at tables` : ''}</span>
+          <label class="period"><span class="sr">Show stats for</span><select id="period">${PERIODS.map(([k, l]) => `<option value="${k}" ${S.period === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+        <span class="num big">${money(me.bankroll)}</span>
         <div class="stats">
-          <div class="stat"><b class="${st.net > 0 ? 'up' : st.net < 0 ? 'down' : ''}">${signed(st.net)}</b><span>Net</span></div>
-          <div class="stat"><b>${fmt(st.hands)}</b><span>Hands</span></div>
+          <div class="stat"><b class="${per.net > 0 ? 'up' : per.net < 0 ? 'down' : ''}">${signedMoney(per.net)}</b><span>Net</span></div>
+          <div class="stat"><b>${count(per.hands)}</b><span>Hands</span></div>
           <div class="stat"><b>${winRate}%</b><span>Won</span></div>
-          <div class="stat"><b>${fmt(st.biggestPot)}</b><span>Best pot</span></div>
+          <div class="stat"><b>${money(per.biggestPot)}</b><span>Best pot</span></div>
         </div>
-        ${me.canRefill ? '<button class="btn primary" id="refill">Get free chips (back to 10,000)</button>' : ''}
+        ${me.canRefill ? '<button class="btn primary" id="refill">Reload play money (back to $1,000)</button>' : ''}
       </section>
       <form class="panel a-start" id="create">
         <h2>Start a table</h2>
         <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
         <span class="lbl">Blinds</span>
-        <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${sb}/${bb}</span><span class="strike"></span><span class="buy">Buy-in ${fmt(bb * 100)}</span></button>`).join('')}</div>
+        <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
         <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
         <button class="btn primary" type="submit">Open the table</button>
       </form>
@@ -205,23 +276,18 @@ function renderLobby() {
         <h2>Got a code?</h2>
         <div class="join-row"><input id="jcode" maxlength="8" placeholder="TG626" autocomplete="off" aria-label="Table code"><button class="btn" type="submit">Join</button></div>
       </form>
-      <section class="panel a-open">
-        <h2>Open tables</h2>
-        ${L.tables.length ? `<div class="rows">${L.tables.map(t => `
-          <div class="trow"><span class="chip"></span><div class="txt"><span class="nm">${esc(t.name)}</span><span class="lbl">${t.sb}/${t.bb} · ${t.players + t.bots}/${t.seats} seated</span></div><button class="btn ghost small" data-join="${t.code}">Join</button></div>`).join('')}</div>`
-          : '<p class="empty-note">No open tables right now. Start one and send the link to your friends.</p>'}
-      </section>
       <section class="panel a-board">
         <h2>High Rollers</h2>
         ${L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
           <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar)}<span class="nm">${esc(p.name)}</span>
-          <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signed(p.net)}</span><span class="h">${fmt(p.hands)} hands</span></div>`).join('')}</div>`
-          : '<p class="empty-note">Play a hand to get on the board. Ranked by net chips won.</p>'}
+          <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
+          : '<p class="empty-note">Play a hand to get on the board. Ranked by net winnings, all time.</p>'}
       </section>
     </div>
-    <p class="fine">Play chips only. No real money.</p>
+    <p class="fine">Play money only for now. No real money.</p>
   </div>`;
-  $('#edit-me').onclick = () => { S.view = 'profile-edit'; renderProfile(true); };
+  $('#edit-me').onclick = () => renderProfileEdit();
+  $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderLobby(); };
   app.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
     S.stakes = b.dataset.st;
     app.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
@@ -266,7 +332,7 @@ function renderCorner() {
 function renderSession() {
   const T = S.table, el = $('#session');
   if (!el || !T) return;
-  if (T.you < 0) { el.innerHTML = `<span class="lbl">Watching · ${T.sb}/${T.bb}</span><span class="watch">${esc(T.name)}</span>`; return; }
+  if (T.you < 0) { el.innerHTML = `<span class="lbl">Watching · ${blinds(T.sb, T.bb)}</span><span class="watch">${esc(T.name)}</span>`; return; }
   const n = T.net || 0;
   const label = n > 0 ? 'Up this table' : n < 0 ? 'Down this table' : 'Even so far';
   el.innerHTML = `<span class="lbl">${label}</span><b class="${n > 0 ? 'up' : n < 0 ? 'down' : ''}">${signed(n)}</b>`;
@@ -291,7 +357,7 @@ function openMenu() {
   }
   menu.innerHTML = items.map(([k, l, i]) => `<button role="menuitem" data-m="${k}">${i}${l}</button>`).join('')
     + (seated.length ? '<hr>' + seated.map(([k, l, i]) => `<button role="menuitem" data-m="${k}">${i}${l}</button>`).join('') : '')
-    + `<div class="meta">Blinds ${T.sb}/${T.bb} · Code ${esc(T.code)}</div>`;
+    + `<div class="meta">Blinds ${blinds(T.sb, T.bb)} · Code ${esc(T.code)}</div>`;
   menu.hidden = false;
   S.menuOpen = true;
   renderCorner();

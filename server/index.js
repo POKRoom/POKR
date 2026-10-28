@@ -7,16 +7,18 @@ const crypto = require('crypto');
 const { attach } = require('./ws');
 const { Table } = require('./engine');
 const { Store, START_BANKROLL } = require('./store');
+const { money } = require('./cards');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
 const store = new Store(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
 store.refundTables();
 
-const STAKES = { micro: [5, 10], low: [10, 20], mid: [25, 50], high: [50, 100] };
+// blinds in cents: 5¢/10¢ up to $2/$5
+const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
 const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
 const AVATAR_COUNT = 16, COLOR_COUNT = 8;
-const REFILL_BELOW = 1000;
+const REFILL_BELOW = 10000; // $100
 
 const tables = new Map();
 const clients = new Set();
@@ -41,7 +43,7 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { id: u.id, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, canRefill: u.bankroll + atTables < REFILL_BELOW };
+  return { id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
@@ -82,6 +84,14 @@ function makeCode() {
   }
 }
 const cleanText = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, '').trim().slice(0, max);
+// slow down password guessing: 8 sign-up/log-in attempts per connection per minute
+function allowAuthAttempt(c) {
+  const now = Date.now();
+  c.auth = (c.auth || []).filter(t => now - t < 60000);
+  if (c.auth.length >= 8) return false;
+  c.auth.push(now);
+  return true;
+}
 const validAvatar = a => a && Number.isInteger(a.a) && a.a >= 0 && a.a < AVATAR_COUNT && Number.isInteger(a.c) && a.c >= 0 && a.c < COLOR_COUNT;
 
 const hooks = {
@@ -91,10 +101,7 @@ const hooks = {
       if (r.kind !== 'human') continue;
       const u = store.byId(r.userId);
       if (!u) continue;
-      u.stats.hands++;
-      u.stats.net += r.delta;
-      if (r.won > 0 && r.delta > 0) u.stats.won++;
-      if (r.won > u.stats.biggestPot) u.stats.biggestPot = r.won;
+      store.recordHand(u, r);
       u.atTables[t.code] = r.chips;
     }
     store.save();
@@ -114,10 +121,38 @@ const hooks = {
 // ---------- messages ----------
 const handlers = {
   hello(c, m) {
-    const u = store.byToken(m.token);
+    const u = store.bySessionToken(m.token);
     if (!u) return send(c, { t: 'needProfile' });
-    c.userId = u.id;
+    c.userId = u.id; c.token = m.token;
     send(c, { t: 'me', user: meOf(u) });
+  },
+
+  signup(c, m) {
+    if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
+    const name = cleanText(m.name, 16);
+    if (name.length < 2) return send(c, { t: 'authError', message: 'Pick a name with at least 2 characters' });
+    if (!validAvatar(m.avatar)) return send(c, { t: 'authError', message: 'Pick an avatar' });
+    const r = store.signup({ email: m.email, password: m.password, name, avatar: { a: m.avatar.a, c: m.avatar.c } });
+    if (r.error) return send(c, { t: 'authError', message: r.error });
+    c.userId = r.user.id; c.token = r.token;
+    send(c, { t: 'token', token: r.token });
+    send(c, { t: 'me', user: meOf(r.user) });
+  },
+
+  login(c, m) {
+    if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
+    const r = store.login({ email: m.email, password: m.password });
+    if (r.error) return send(c, { t: 'authError', message: r.error });
+    c.userId = r.user.id; c.token = r.token;
+    send(c, { t: 'token', token: r.token });
+    send(c, { t: 'me', user: meOf(r.user) });
+  },
+
+  logout(c) {
+    if (c.code) handlers.leave(c, { keepSeat: true });
+    if (c.token) store.logout(c.token);
+    c.userId = null; c.token = null;
+    send(c, { t: 'needProfile' });
   },
 
   profile(c, m) {
@@ -125,7 +160,7 @@ const handlers = {
     if (name.length < 2) return send(c, { t: 'error', message: 'Pick a name with at least 2 characters' });
     if (!validAvatar(m.avatar)) return send(c, { t: 'error', message: 'Pick an avatar' });
     const avatar = { a: m.avatar.a, c: m.avatar.c };
-    let u = c.userId && store.byId(c.userId);
+    const u = c.userId && store.byId(c.userId);
     if (u) {
       u.name = name; u.avatar = avatar;
       store.save();
@@ -134,11 +169,6 @@ const handlers = {
         if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = avatar; broadcastTable(t); }
       }
       sendMe(u.id);
-    } else {
-      const made = store.createUser(name, avatar);
-      c.userId = made.user.id;
-      send(c, { t: 'token', token: made.token });
-      send(c, { t: 'me', user: meOf(made.user) });
     }
   },
 
@@ -147,7 +177,7 @@ const handlers = {
   refill(c) {
     const u = store.byId(c.userId);
     if (!u) return;
-    if (!meOf(u).canRefill) return send(c, { t: 'error', message: `Free chips are for players under ${REFILL_BELOW}` });
+    if (!meOf(u).canRefill) return send(c, { t: 'error', message: `Free chips are for players under ${money(REFILL_BELOW)}` });
     const add = START_BANKROLL - u.bankroll;
     u.bankroll = START_BANKROLL;
     store.ledger(u, 'refill', add, 'free chips');
@@ -158,7 +188,7 @@ const handlers = {
   create(c, m) {
     const u = store.byId(c.userId);
     if (!u) return;
-    const stakes = STAKES[m.stakes] || STAKES.low;
+    const stakes = STAKES[m.stakes] || STAKES['10-25'];
     const code = makeCode();
     const name = cleanText(m.name, 28) || `${u.name}'s table`;
     const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate }, hooks);
@@ -188,7 +218,7 @@ const handlers = {
     const t = tables.get(c.code), u = store.byId(c.userId);
     if (!t || !u) return;
     const buyIn = Math.floor(Number(m.buyIn));
-    if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return send(c, { t: 'error', message: `Buy in between ${t.buyInMin} and ${t.buyInMax}` });
+    if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return send(c, { t: 'error', message: `Buy in between ${money(t.buyInMin)} and ${money(t.buyInMax)}` });
     if (buyIn > u.bankroll) return send(c, { t: 'error', message: 'You don’t have that many chips in your bankroll' });
     const err = t.sit({ userId: u.id, name: u.name, avatar: u.avatar }, Number(m.seat), buyIn);
     if (err) return send(c, { t: 'error', message: err });
@@ -274,7 +304,7 @@ attach(server, ws => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string' || !Object.prototype.hasOwnProperty.call(handlers, m.t)) return;
-    if (m.t !== 'hello' && m.t !== 'profile' && !c.userId) return send(c, { t: 'needProfile' });
+    if (!['hello', 'signup', 'login'].includes(m.t) && !c.userId) return send(c, { t: 'needProfile' });
     try { handlers[m.t](c, m); } catch (e) { console.error(e); send(c, { t: 'error', message: 'Something went wrong on the server' }); }
   });
   ws.on('close', () => {
