@@ -737,3 +737,53 @@ button.lrowbtn:active { background: rgba(255, 255, 255, .06); }
   #modal .sheetish .dialog { border-radius: 22px; max-width: 460px; }
   #modal .sheetish .grab { display: none; }
 }
+
+/* =====================================================================
+   LOGO — "pokr", the o is a poker chip.
+   ===================================================================== */
+.logo { display: inline-flex; align-items: baseline; font-family: var(--sans); font-weight: 800; letter-spacing: -.055em; line-height: 1; color: var(--cream); margin: 0; font-size: 34px; }
+.logo.md { font-size: 44px; }
+.logo.xl { font-size: clamp(76px, 24vw, 112px); }
+.chip-o {
+  position: relative; display: inline-block; width: .56em; height: .56em; margin: 0 .035em 0 .03em; border-radius: 50%; align-self: baseline; transform: translateY(.02em);
+  background: radial-gradient(circle, var(--chip-a) 0 36%, var(--chip-edge) 37% 41%, var(--chip-a) 42%);
+  border: .085em dashed var(--chip-edge); box-shadow: 0 0 0 .035em var(--chip-a), 0 .05em .12em rgba(0, 0, 0, .45);
+}
+.logo:hover .chip-o { animation: chipspin .8s var(--ease); }
+@keyframes chipspin { to { transform: translateY(.02em) rotate(360deg); } }
+.rail-logo.logo { font-size: 36px; margin: 2px 12px 24px; }
+.welcome .logo.xl { margin-top: 2vh; }
+.pb-title { font: 700 22px/1.1 var(--sans); letter-spacing: -.03em; margin: 0; text-align: center; white-space: nowrap; }
+.boot .logo { opacity: .9; }
+
+/* =====================================================================
+   SPLASH — chips fly in, the wordmark sets, chips burst away.
+   ===================================================================== */
+#splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--felt) 55%, var(--velvet)), var(--velvet) 70%); transition: opacity .4s var(--ease); }
+#splash.gone { opacity: 0; pointer-events: none; }
+.sp-chips { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.sp-chips i {
+  position: absolute; left: calc(var(--s) / -2); top: calc(var(--s) / -2); width: var(--s); height: var(--s); border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0 38%, rgba(255, 255, 255, .85) 39% 42%, var(--c) 43%);
+  border: calc(var(--s) * .13) dashed rgba(255, 255, 255, .9); box-shadow: 0 0 0 2px var(--c), 0 calc(var(--s) * .08) 0 rgba(0, 0, 0, .35), 0 10px 24px rgba(0, 0, 0, .4);
+  opacity: 0; animation: chipfly 1.75s cubic-bezier(.22, .9, .3, 1) var(--d) both;
+}
+@keyframes chipfly {
+  0% { opacity: 0; transform: translate(var(--x0), var(--y0)) rotate(0deg) scale(.8); }
+  12% { opacity: 1; }
+  45% { transform: translate(var(--x1), var(--y1)) rotate(var(--r)) scale(1); }
+  62% { opacity: 1; transform: translate(calc(var(--x1) * 1.05), calc(var(--y1) * 1.05)) rotate(calc(var(--r) * 1.1)) scale(1); }
+  100% { opacity: 0; transform: translate(var(--x2), var(--y2)) rotate(calc(var(--r) * 1.6)) scale(.9); }
+}
+.sp-logo { position: relative; z-index: 2; font-size: clamp(84px, 26vw, 150px); text-shadow: 0 6px 30px rgba(0, 0, 0, .55); }
+.sp-logo .l1, .sp-logo .l2, .sp-logo .l3 { display: inline-block; opacity: 0; animation: letterup .55s var(--ease) both; }
+.sp-logo .l1 { animation-delay: .62s; } .sp-logo .l2 { animation-delay: .74s; } .sp-logo .l3 { animation-delay: .82s; }
+@keyframes letterup { from { opacity: 0; transform: translateY(.35em); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.sp-logo .chip-o { animation: chipdrop .75s cubic-bezier(.3, 1.4, .5, 1) .9s both; }
+@keyframes chipdrop {
+  0% { opacity: 0; transform: translateY(-2.2em) rotate(-540deg) scale(1.4); }
+  60% { opacity: 1; transform: translateY(.06em) rotate(0) scale(1); }
+  80% { transform: translateY(-.06em) scale(1.04); }
+  100% { opacity: 1; transform: translateY(.02em) rotate(0) scale(1); }
+}

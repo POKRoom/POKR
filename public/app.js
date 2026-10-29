@@ -27,6 +27,36 @@ const ICON = {
 
 const $ = s => document.querySelector(s);
 const app = $('#app');
+// the wordmark: "pokr" where the o is a poker chip
+const LOGO = 'p<span class="chip-o" aria-hidden="true"></span>kr';
+
+// Opening animation: chips fly in, the wordmark sets with the chip dropping in as the o,
+// then everything clears. Tap to skip; skipped entirely for reduced-motion.
+(function splash() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try { if (sessionStorage.getItem('pokr.splashed')) return; sessionStorage.setItem('pokr.splashed', '1'); } catch { /* storage blocked: show it */ }
+  const el = document.createElement('div');
+  el.id = 'splash';
+  el.setAttribute('aria-hidden', 'true');
+  const colors = ['#C8202B', '#F4ECDC', '#2E8F86', '#151010', '#3E5FB0', '#D9A84E'];
+  let chips = '';
+  for (let i = 0; i < 18; i++) {
+    const ang = (i / 18) * Math.PI * 2 + Math.random() * .4;
+    const far = 75 + Math.random() * 25;           // start off-screen, in vmax
+    const near = 10 + Math.random() * 26;          // where it hovers around the logo, in vmin
+    const out = 90 + Math.random() * 40;           // where it bursts to
+    const x0 = Math.cos(ang) * far, y0 = Math.sin(ang) * far;
+    const x1 = Math.cos(ang + .5) * near, y1 = Math.sin(ang + .5) * near * .7;
+    const x2 = Math.cos(ang + .7) * out, y2 = Math.sin(ang + .7) * out;
+    const size = 26 + Math.round(Math.random() * 30);
+    chips += `<i style="--x0:${x0.toFixed(1)}vmax;--y0:${y0.toFixed(1)}vmax;--x1:${x1.toFixed(1)}vmin;--y1:${y1.toFixed(1)}vmin;--x2:${x2.toFixed(1)}vmax;--y2:${y2.toFixed(1)}vmax;--s:${size}px;--c:${colors[i % colors.length]};--d:${i * 28}ms;--r:${Math.round(Math.random() * 720 - 360)}deg"></i>`;
+  }
+  el.innerHTML = `<div class="sp-chips">${chips}</div><div class="sp-logo logo"><span class="l1">p</span><span class="chip-o"></span><span class="l2">k</span><span class="l3">r</span></div>`;
+  document.body.appendChild(el);
+  const done = () => { if (!el.isConnected) return; el.classList.add('gone'); setTimeout(() => el.remove(), 420); };
+  el.addEventListener('click', done);
+  setTimeout(done, 2300);
+})();
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // all amounts are whole cents; show them as dollars
 const money = c => { const d = (c || 0) / 100; return '$' + d.toLocaleString('en-US', Number.isInteger(d) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
@@ -205,7 +235,7 @@ function renderAuth(mode) {
   const signup = mode === 'signup';
   app.innerHTML = `
   <main class="welcome">
-    <h1 class="marquee xl">Pokr</h1>
+    <h1 class="logo xl" aria-label="Pokr">${LOGO}</h1>
     <p class="tagline">The card room for you and your friends.</p>
     <div class="fan" aria-hidden="true">${fan}</div>
     <form class="panel pf" id="auth" novalidate>
@@ -258,7 +288,7 @@ function renderProfileEdit() {
   S.draft = S.me.avatar.a;
   app.innerHTML = `
   <main class="welcome">
-    <h1 class="marquee">Pokr</h1>
+    <h1 class="logo md" aria-label="Pokr">${LOGO}</h1>
     <form class="panel pf" id="pf">
       <h2>Your profile</h2>
       <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
@@ -307,7 +337,7 @@ function renderTabs() {
   const y = same ? window.scrollY : 0;
   const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
-    <nav class="tabbar" aria-label="Sections"><span class="rail-logo marquee" aria-hidden="true">Pokr</span>
+    <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
       ${TABS.map(([k, l]) => `<button class="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${TICON[k]}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
@@ -517,7 +547,7 @@ const THEME_LOOK = {
   zebra: { wall: '#F2EDE4', felt: '#8E1520', accent: '#F2EDE4' },
 };
 function pageBar(title) {
-  return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Back</button><h1 class="marquee">${title}</h1><span class="pb-gap"></span></div>`;
+  return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Back</button><h1 class="pb-title">${title}</h1><span class="pb-gap"></span></div>`;
 }
 function renderClub() {
   leaveTableView();

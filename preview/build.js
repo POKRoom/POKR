@@ -34,7 +34,7 @@ ${css}
 .preview-bar b { color: var(--brass); font-weight: 600; }
 </style>
 <div class="preview-bar"><b>PREVIEW</b> · You’re playing bots. Friends can join once Pokr is online.</div>
-<div id="app"><div class="boot"><h1 class="marquee xl">Pokr</h1></div></div>
+<div id="app"><div class="boot"><span class="logo xl" aria-label="Pokr">p<span class="chip-o"></span>kr</span></div></div>
 <div id="modal"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="conn" hidden>Reconnecting…</div>
