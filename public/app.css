@@ -787,3 +787,12 @@ button.lrowbtn:active { background: rgba(255, 255, 255, .06); }
   80% { transform: translateY(-.06em) scale(1.04); }
   100% { opacity: 1; transform: translateY(.02em) rotate(0) scale(1); }
 }
+
+/* ---------- blinds filter ---------- */
+.filters { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 2px -16px 12px; padding: 0 16px; scroll-snap-type: x proximity; }
+.filters::-webkit-scrollbar { display: none; }
+.fchip { flex: none; scroll-snap-align: start; border: 1px solid var(--line, rgba(255,255,255,.1)); background: rgba(0, 0, 0, .22); color: var(--muted); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .18s var(--ease, ease), color .18s, border-color .18s; }
+.fchip[aria-checked=true] { background: var(--cream); color: #1a1210; border-color: transparent; }
+.fchip:active { transform: scale(.96); }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--cream); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+@media (min-width: 900px) { .filters { margin: 2px 0 12px; padding: 0; flex-wrap: wrap; } }

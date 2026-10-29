@@ -354,33 +354,36 @@ const soonRow = (title, sub) => `<div class="lrowbtn static"><div class="lr-txt"
 function tabPlay() {
   const me = S.me, L = S.lobby || { tables: [] };
   const seated = Object.entries(me.atTablesBy || {});
+  S.blindFilter = S.blindFilter || 'all';
+  const shown = (L.tables || []).filter(t => S.blindFilter === 'all' || STAKES.some(([k, sb, bb]) => k === S.blindFilter && t.sb === sb && t.bb === bb));
   const dots = (n, of) => `<span class="dots" aria-label="${n} of ${of} seats taken">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
   const html = `
     ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${avatarHTML(me.avatar)}<span class="num">${money(me.bankroll)}</span></button>`, `${greet()}, ${esc(me.name)}`)}
     ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
-    <div class="tiles2">
-      <button class="tile primary" id="new-table">${TICON.plus}<b>Start a table</b><span>Invite your friends</span></button>
-      <button class="tile" id="join-code">${TICON.key}<b>Join with code</b><span>Got an invite?</span></button>
-    </div>
     <section class="sec">
-      <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${L.tables.length}</span>` : ''}</div>
-      ${!S.lobby ? skelRows(3) : L.tables.length ? `<div class="cards">${L.tables.map(t => `
+      <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${shown.length}</span>` : ''}</div>
+      <div class="filters" role="radiogroup" aria-label="Blinds">
+        ${[['all', 'All blinds'], ...STAKES.map(([k, sb, bb]) => [k, blinds(sb, bb)])].map(([k, l]) => `<button type="button" role="radio" class="fchip ${k === 'all' ? '' : 'num'}" data-bf="${k}" aria-checked="${S.blindFilter === k}">${l}</button>`).join('')}
+      </div>
+      ${!S.lobby ? skelRows(3) : shown.length ? `<div class="cards">${shown.map(t => `
         <button class="tcard" data-join="${t.code}"><span class="bl num">${blinds(t.sb, t.bb)}</span>
           <span class="tc-mid"><b>${esc(t.name)}</b>${dots(t.players + t.bots, t.seats)}</span>
           <span class="tc-go">Join</span></button>`).join('')}</div>`
-        : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one and send the link to your friends.</p></div>`}
+        : S.blindFilter !== 'all' && L.tables.length ? `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables at ${esc(blindLabel(S.blindFilter))}.</p><p class="sub"><button class="linkbtn" data-bf="all">Show all blinds</button> or start one in Home games.</p></div>`
+        : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one in <button class="linkbtn" id="to-games">Home games</button> and send your friends the code.</p></div>`}
     </section>
     <p class="fine">Play money only for now. No real money.</p>`;
   const bind = () => {
     $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
-    $('#new-table').onclick = openNewTable;
-    $('#join-code').onclick = openJoinCode;
+    app.querySelectorAll('[data-bf]').forEach(b => b.onclick = () => { buzz(4); S.blindFilter = b.dataset.bf; renderTabs(); });
+    if ($('#to-games')) $('#to-games').onclick = () => { S.tab = 'games'; renderTabs(); };
     app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
     app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
   };
   return { html, bind };
 }
 
+const blindLabel = k => { const st = STAKES.find(x => x[0] === k); return st ? blinds(st[1], st[2]) : ''; };
 function openNewTable() {
   const me = S.me;
   openSheet(`
@@ -413,10 +416,14 @@ function openJoinCode() {
 
 function tabGames() {
   const html = `
-    ${largeTitle('Home games', '', 'Your real-life game, upgraded')}
+    ${largeTitle('Home games', '', 'Your game, your friends')}
+    <div class="tiles2">
+      <button class="tile primary" id="new-table">${TICON.plus}<b>Start a table</b><span>Invite your friends</span></button>
+      <button class="tile" id="join-code">${TICON.key}<b>Join with code</b><span>Got an invite?</span></button>
+    </div>
     <section class="hero-card">
       <span class="lbl">Coming soon</span>
-      <h2>Run your Friday game from your phone</h2>
+      <h2>Run your in-person game from your phone</h2>
       <p>Track buy-ins and cash-outs, settle up in one tap, and keep every hand for your monthly Wrapped.</p>
     </section>
     <div class="list">
@@ -427,7 +434,8 @@ function tabGames() {
       ${soonRow('Chip counter', 'Count stacks with your camera, on your phone')}
       ${soonRow('Seat draw & dealer button', 'Fair seats, no arguing')}
     </div>`;
-  return { html };
+  const bind = () => { $('#new-table').onclick = openNewTable; $('#join-code').onclick = openJoinCode; };
+  return { html, bind };
 }
 
 function tabSocial() {
