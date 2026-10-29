@@ -1103,3 +1103,87 @@ body, body[data-skin=lounge], body[data-skin=neon], body[data-skin=monaco] {
 .club-banner { border-color: rgba(201, 168, 106, .25); }
 .fchip[aria-checked=true] { background: var(--cream); color: #0E0E0F; }
 .btn.primary.pk-go, .picker .pk-go { background: var(--cream); color: #0E0E0F; box-shadow: none; }
+
+/* =====================================================================
+   REAL DECK — cards laid out like a physical deck.
+   ===================================================================== */
+.pc { --ink: var(--card-ink); background: #FDFDFB; border-radius: calc(var(--w) * .075); overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .13), 0 1px 2px rgba(0, 0, 0, .35), 0 4px 10px rgba(0, 0, 0, .25); }
+.pc.red { --ink: var(--card-red); }
+.pc:not(.back):not(.empty) { color: var(--ink); }
+.pc .ix { position: absolute; left: 3.5%; top: 3%; width: 19%; display: flex; flex-direction: column; align-items: center; }
+.pc .ix2 { left: auto; top: auto; right: 3.5%; bottom: 3%; transform: rotate(180deg); }
+.pc .r { font-family: "Crimson Pro", "Iowan Old Style", Georgia, "Times New Roman", serif; font-weight: 700; font-size: calc(var(--w) * .235); line-height: .86; letter-spacing: -.02em; }
+.pc.r10 .r { letter-spacing: -.12em; margin-left: -.1em; font-size: calc(var(--w) * .21); }
+.pc .s1 { width: 78%; margin-top: 4%; }
+.pc .s2 { display: none; }
+.pc .pips { position: absolute; left: 28%; right: 28%; top: 16%; bottom: 16%; }
+.pc .pips i { position: absolute; width: calc(var(--w) * .2); translate: -50% -50%; display: block; }
+.pc .pips i.f { rotate: 180deg; }
+.pc .pips svg, .pc .ace svg, .pc .court svg { width: 100%; height: auto; fill: currentColor; display: block; }
+.pc .ace { position: absolute; left: 50%; top: 50%; width: 40%; translate: -50% -50%; }
+.pc .court { position: absolute; left: 21%; right: 21%; top: 12%; bottom: 12%; display: grid; place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--ink) 7%, #FDFDFB), color-mix(in srgb, #C9A86A 16%, #FDFDFB));
+  box-shadow: inset 0 0 0 2px #FDFDFB, inset 0 0 0 3px rgba(201, 168, 106, .7); }
+.pc .court b { font-family: "Crimson Pro", Georgia, serif; font-weight: 700; font-size: calc(var(--w) * .4); line-height: 1; }
+.pc .court .ct-s { position: absolute; width: 26%; }
+.pc .court .ct-s.a { left: 9%; top: 6%; }
+.pc .court .ct-s.b { right: 9%; bottom: 6%; rotate: 180deg; }
+/* tiny cards (seats, showdown): index + one big suit, like a real card peeking from a hand */
+.pod .hole .pc .pips, .pod .hole .pc .ace, .pod .hole .pc .court, .pod .hole .pc .ix2 { display: none; }
+.pod .hole .pc .s2 { display: block; position: absolute; right: 9%; bottom: 8%; width: 48%; }
+.pod .hole .pc .ix { left: 7%; top: 5%; width: 32%; }
+.pod .hole .pc .r { font-size: calc(var(--w) * .4); }
+/* bigger board so the real layout reads */
+.board .pc { --w: clamp(44px, 13.4vw, 56px); }
+@media (min-width: 700px) { .board .pc { --w: clamp(56px, 5.4vw, 72px); } }
+.board .pc.back.waiting { box-shadow: inset 0 0 0 calc(var(--w) * .05) #2A2A2E, inset 0 0 0 calc(var(--w) * .06) rgba(201, 168, 106, .4), 0 2px 6px rgba(0, 0, 0, .4); }
+.board .pc.back.waiting::before { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, .12); border-radius: inherit; }
+
+/* ---------- table type + smaller opponents ---------- */
+.tbl { --sans: "Inter", ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif; font-family: var(--sans); font-feature-settings: "tnum" 1, "cv11" 1; }
+.pod .av .ava { --size: 32px; }
+.pod .av .ava.mono { font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.pod .plate { margin-top: -5px; min-width: 58px; padding: 3px 8px 4px; border-radius: 7px; }
+.plate .nm { font-size: 10px; letter-spacing: .01em; }
+.plate .ch { font-size: 12px; font-weight: 600; letter-spacing: -.01em; }
+.pod .av .ring { inset: -4px; left: -4px; top: -4px; }
+.pod .av .dealer { width: 15px; height: 15px; font-size: 8px; line-height: 15px; right: -6px; bottom: 2px; }
+.pod .hole { bottom: calc(100% - 26px); }
+.pod .act { font-size: 9px; top: calc(100% + 3px); }
+.seat.empty button.open { width: 34px; height: 34px; font-size: 10px; }
+.seat.empty .open:not(button) { width: 24px; height: 24px; }
+.seat.shown .pod .hole { bottom: calc(100% - 10px); }
+.myinfo .mystack { font-weight: 600; letter-spacing: -.02em; }
+.act-btn b { font-weight: 600; letter-spacing: -.005em; }
+.felt .street, .pot .lbl, .pod .act { font-weight: 500; }
+
+/* ---------- home screens: a slight theme ---------- */
+.shell { background:
+  radial-gradient(85% 38% at 50% -6%, color-mix(in srgb, var(--felt) 55%, transparent), transparent 72%),
+  radial-gradient(60% 30% at 100% 0%, color-mix(in srgb, var(--brass) 10%, transparent), transparent 70%); }
+.lt h1 { letter-spacing: -.035em; }
+.lt-eyebrow { color: var(--brass); }
+.pc .ix { left: 3%; top: 3%; width: 15.5%; }
+.pc .ix2 { left: auto; top: auto; right: 3%; bottom: 3%; }
+.pc .r { font-size: calc(var(--w) * .2); }
+.pc.r10 .r { font-size: calc(var(--w) * .175); letter-spacing: -.14em; margin-left: -.14em; }
+.pc .s1 { width: 80%; margin-top: 6%; }
+.pc .pips { left: 32%; right: 32%; top: 17%; bottom: 17%; }
+.pc .pips i { width: calc(var(--w) * .17); }
+.pc .court { left: 20%; right: 20%; top: 11%; bottom: 11%; }
+.btn.primary:hover:not(:disabled) { background: #fff; }
+
+/* jumbo-index deck (what casinos deal): oversized corners, smaller pips in the middle */
+.tbl .pc .ix { width: 27%; left: 4%; top: 3.5%; }
+.tbl .pc .ix2 { left: auto; top: auto; right: 4%; bottom: 3.5%; }
+.tbl .pc .r { font-size: calc(var(--w) * .33); line-height: .84; letter-spacing: -.03em; }
+.tbl .pc.r10 .r { font-size: calc(var(--w) * .29); letter-spacing: -.13em; margin-left: -.1em; }
+.tbl .pc .s1 { width: 66%; margin-top: 8%; }
+.tbl .pc .pips { left: 38%; right: 38%; top: 20%; bottom: 20%; }
+.tbl .pc .pips i { width: calc(var(--w) * .13); }
+.tbl .pc .ace { width: 30%; left: 56%; top: 54%; }
+.tbl .pc .court { left: 34%; right: 9%; top: 14%; bottom: 30%; }
+.tbl .pc .court b { font-size: calc(var(--w) * .3); }
+.tbl .pc .court .ct-s { display: none; }
