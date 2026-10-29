@@ -1187,3 +1187,5 @@ body, body[data-skin=lounge], body[data-skin=neon], body[data-skin=monaco] {
 .tbl .pc .court { left: 34%; right: 9%; top: 14%; bottom: 30%; }
 .tbl .pc .court b { font-size: calc(var(--w) * .3); }
 .tbl .pc .court .ct-s { display: none; }
+/* diamonds in blue so they never get mistaken for hearts */
+.pc.diam { --ink: #1E5BC6; --card-red: #1E5BC6; }

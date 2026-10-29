@@ -167,7 +167,7 @@ function cardHTML(c, cls = '', style = '') {
   if (r <= 10) mid = `<span class="pips">${PIPS[r].map(([x, y, f]) => `<i style="left:${x}%;top:${y}%"${f ? ' class="f"' : ''}>${suit}</i>`).join('')}</span>`;
   else if (r === 14) mid = `<span class="ace">${suit}</span>`;
   else mid = `<span class="court"><span class="ct-s a">${suit}</span><b>${rt}</b><span class="ct-s b">${suit}</span></span>`;
-  return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} r${rt} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="ix">${ix}</span><span class="ix ix2">${ix}</span>${mid}<span class="s2">${suit}</span></div>`;
+  return `<div class="pc ${s === 1 ? 'red' : s === 2 ? 'red diam' : ''} r${rt} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="ix">${ix}</span><span class="ix ix2">${ix}</span>${mid}<span class="s2">${suit}</span></div>`;
 }
 // toast with an optional fix-it action: toast('Not enough money', ['Cashier', () => renderCashier('deposit')])
 function toast(text, action) {
