@@ -123,12 +123,12 @@ function onMessage(m) {
       else if (S.view === 'table') {
         if (S.rejoin) { S.rejoin = false; send({ t: 'join', code: S.table ? S.table.code : routeCode() }); }
         renderMine(true);
-      } else if (S.view === 'lobby') renderLobby();
+      } else if (S.view === 'tabs') renderTabs();
       else if (S.view === 'club') renderClub();
       else if (S.view === 'cashier') renderCashier();
       break;
     }
-    case 'lobby': S.lobby = m; if (S.view === 'lobby') renderLobby(); break;
+    case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social')) renderTabs(); break;
     case 'created': nav('/t/' + m.code); joinCode(m.code); break;
     case 'state': {
       const fresh = S.view !== 'table' || !S.table || S.table.code !== m.s.code || !$('#stage');
@@ -170,12 +170,12 @@ function joinCode(code) {
 }
 // stepping away from a table to another screen keeps your seat
 function leaveTableView() { if (S.view === 'table') { send({ t: 'leave', keepSeat: true }); nav('/'); S.table = null; closeChat(); closeMenu(); } }
-function goLobby() { S.view = 'lobby'; S.table = null; closeChat(); send({ t: 'lobby' }); renderLobby(); }
-function leaveTable() { send({ t: 'leave' }); nav('/'); S.view = 'lobby'; S.table = null; closeChat(); renderLobby(); }
+function goLobby() { S.table = null; closeChat(); send({ t: 'lobby' }); renderTabs(); }
+function leaveTable() { send({ t: 'leave' }); nav('/'); S.table = null; closeChat(); renderTabs(); }
 window.addEventListener('popstate', () => {
   const code = routeCode();
   if (code) joinCode(code);
-  else if (S.view === 'table') { send({ t: 'leave' }); S.view = 'lobby'; S.table = null; closeChat(); renderLobby(); }
+  else if (S.view === 'table') { send({ t: 'leave' }); S.table = null; closeChat(); renderTabs(); }
 });
 
 /* ---------------- sign up / log in / profile ---------------- */
@@ -285,88 +285,228 @@ function renderProfileEdit() {
 
 /* ---------------- lobby ---------------- */
 const PERIODS = [['day', 'Last 24 hours'], ['week', 'Last 7 days'], ['month', 'Last 30 days'], ['all', 'All time']];
-function renderLobby() {
+/* ---------------- app shell: tab bar + tabs ---------------- */
+const TICON = {
+  play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path class="f" d="M12 3C12 3 5 9 5 13.2C5 15.4 6.8 17 8.9 17C10.2 17 11.2 16.4 11.6 15.7L10.6 20.5H13.4L12.4 15.7C12.8 16.4 13.8 17 15.1 17C17.2 17 19 15.4 19 13.2C19 9 12 3 12 3Z"/></svg>',
+  games: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="3" y="7" width="18" height="10" rx="5"/><path d="M8 12h.01M12 12h.01M16 12h.01" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  social: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle class="f" cx="9" cy="8.5" r="3.5"/><path class="f" d="M2.8 19.5c.6-3.3 3.1-5.2 6.2-5.2s5.6 1.9 6.2 5.2Z"/><path d="M16 5.2a3.4 3.4 0 0 1 0 6.6M18 14.6c1.9.6 3.1 2.4 3.4 4.9"/></svg>',
+  wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="3" y="6" width="18" height="13" rx="3"/><path d="M3 9.5h18M16 14h2"/></svg>',
+  me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle class="f" cx="12" cy="8.5" r="4"/><path class="f" d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6Z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+};
+const TABS = [['play', 'Play'], ['games', 'Home games'], ['social', 'Social'], ['wallet', 'Wallet'], ['me', 'Profile']];
+
+function renderTabs() {
+  S.view = 'tabs';
+  S.tab = S.tab || 'play';
   const me = S.me;
   if (!me) return;
-  const L = S.lobby || { tables: [], leaderboard: [] };
+  const same = S.lastTab === S.tab && S.lastPainted === 'tabs';
+  const y = same ? window.scrollY : 0;
+  const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
+  app.innerHTML = `<div class="shell">
+    <nav class="tabbar" aria-label="Sections"><span class="rail-logo marquee" aria-hidden="true">Pokr</span>
+      ${TABS.map(([k, l]) => `<button class="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+    <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
+  </div>`;
+  S.lastTab = S.tab; S.lastPainted = 'tabs';
+  window.scrollTo(0, y);
+  app.querySelectorAll('.tabbar [data-tab]').forEach(b => b.onclick = () => { if (S.tab === b.dataset.tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; } buzz(4); S.tab = b.dataset.tab; renderTabs(); });
+  if (body.bind) body.bind();
+}
+const renderLobby = renderTabs;
+const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Late night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+const largeTitle = (title, right = '', eyebrow = '') => `<header class="lt"><div>${eyebrow ? `<span class="lt-eyebrow">${eyebrow}</span>` : ''}<h1>${title}</h1></div>${right}</header>`;
+const soonRow = (title, sub) => `<div class="lrowbtn static"><div class="lr-txt"><b>${title}</b><span>${sub}</span></div><span class="soon">Soon</span></div>`;
+
+function tabPlay() {
+  const me = S.me, L = S.lobby || { tables: [] };
+  const seated = Object.entries(me.atTablesBy || {});
+  const dots = (n, of) => `<span class="dots" aria-label="${n} of ${of} seats taken">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
+  const html = `
+    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${avatarHTML(me.avatar)}<span class="num">${money(me.bankroll)}</span></button>`, `${greet()}, ${esc(me.name)}`)}
+    ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
+    <div class="tiles2">
+      <button class="tile primary" id="new-table">${TICON.plus}<b>Start a table</b><span>Invite your friends</span></button>
+      <button class="tile" id="join-code">${TICON.key}<b>Join with code</b><span>Got an invite?</span></button>
+    </div>
+    <section class="sec">
+      <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${L.tables.length}</span>` : ''}</div>
+      ${!S.lobby ? skelRows(3) : L.tables.length ? `<div class="cards">${L.tables.map(t => `
+        <button class="tcard" data-join="${t.code}"><span class="bl num">${blinds(t.sb, t.bb)}</span>
+          <span class="tc-mid"><b>${esc(t.name)}</b>${dots(t.players + t.bots, t.seats)}</span>
+          <span class="tc-go">Join</span></button>`).join('')}</div>`
+        : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one and send the link to your friends.</p></div>`}
+    </section>
+    <p class="fine">Play money only for now. No real money.</p>`;
+  const bind = () => {
+    $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
+    $('#new-table').onclick = openNewTable;
+    $('#join-code').onclick = openJoinCode;
+    app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
+    app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
+  };
+  return { html, bind };
+}
+
+function openNewTable() {
+  const me = S.me;
+  openSheet(`
+    <h2>Start a table</h2>
+    <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
+    <span class="lbl">Blinds</span>
+    <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
+    <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
+    <button class="btn primary" id="create-go">Open the table</button>`, () => {
+    document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+      S.stakes = b.dataset.st; buzz(4);
+      document.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
+    });
+    $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
+    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate }); };
+  });
+}
+function openJoinCode() {
+  openSheet(`<h2>Join with a code</h2><p class="wait">Ask whoever started the table for its 5-letter code.</p>
+    <form class="join-row" id="joinf"><input id="jcode" maxlength="8" placeholder="TG626" autocomplete="off" aria-label="Table code" autocapitalize="characters"><button class="btn primary" type="submit">Join</button></form>`, () => {
+    $('#jcode').focus();
+    $('#joinf').onsubmit = e => {
+      e.preventDefault();
+      const code = $('#jcode').value.trim().toUpperCase();
+      if (!code) return;
+      closeModal(); nav('/t/' + code); joinCode(code);
+    };
+  });
+}
+
+function tabGames() {
+  const html = `
+    ${largeTitle('Home games', '', 'Your real-life game, upgraded')}
+    <section class="hero-card">
+      <span class="lbl">Coming soon</span>
+      <h2>Run your Friday game from your phone</h2>
+      <p>Track buy-ins and cash-outs, settle up in one tap, and keep every hand for your monthly Wrapped.</p>
+    </section>
+    <div class="list">
+      ${soonRow('Game tracker', 'Buy-ins, rebuys, cash-outs and results')}
+      ${soonRow('Settle up', 'Who owes whom, with history')}
+      ${soonRow('Invites & RSVPs', 'An event page with a waitlist and reminders')}
+      ${soonRow('Blind timer & payouts', 'For home tournaments')}
+      ${soonRow('Chip counter', 'Count stacks with your camera, on your phone')}
+      ${soonRow('Seat draw & dealer button', 'Fair seats, no arguing')}
+    </div>`;
+  return { html };
+}
+
+function tabSocial() {
+  const me = S.me, L = S.lobby || { leaderboard: [] };
+  S.socialSeg = S.socialSeg || 'board';
+  const board = S.socialSeg === 'board';
+  const html = `
+    ${largeTitle('Social')}
+    <div class="seg2" role="tablist"><button role="tab" data-seg="board" aria-selected="${board}">Leaderboard</button><button role="tab" data-seg="crews" aria-selected="${!board}">Crews</button></div>
+    ${board ? `<section class="panel">
+      <div class="sec-head"><h2>High Rollers</h2><span class="lbl">All time</span></div>
+      ${!S.lobby ? skelRows(4) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
+        <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar)}<span class="nm">${esc(p.name)}</span>
+        <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
+        : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot.</p></div>'}
+    </section>` : `
+    <section class="hero-card">
+      <span class="lbl">Coming soon</span>
+      <h2>Crews</h2>
+      <p>Your poker group, in one place: a crew leaderboard, seasons, rivalries and a chat that stays after the game.</p>
+    </section>
+    <div class="list">
+      ${soonRow('Rivalries', 'Your record against everyone you’ve played')}
+      ${soonRow('Monthly Wrapped', 'Your month at the tables, in one swipe')}
+      ${soonRow('Hand sharing', 'Send a hand to the group chat')}
+      ${soonRow('Spectate', 'Watch friends play, on a delay')}
+    </div>`}`;
+  const bind = () => app.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { S.socialSeg = b.dataset.seg; renderTabs(); });
+  return { html, bind };
+}
+
+function tabWallet() {
+  const me = S.me, C = S.catalog;
+  const txs = me.transactions || [];
+  const pending = txs.filter(t => t.status === 'pending').length;
+  const html = `
+    ${largeTitle('Wallet')}
+    <section class="balance-card">
+      <span class="lbl">Balance</span>
+      <span class="num big">${money(me.bankroll)}</span>
+      <span class="sub">${me.atTables ? `${money(me.atTables)} at tables · ` : ''}${pending ? `${pending} transfer${pending > 1 ? 's' : ''} on the way · ` : ''}Test mode</span>
+      <div class="acts"><button class="btn primary" id="w-dep">Deposit</button><button class="btn" id="w-wd">Withdraw</button></div>
+    </section>
+    <p class="fine left">Deposits and standard withdrawals are free. Instant transfers cost ${C ? C.fees.instantPct : 1.5}% (min ${money(C ? C.fees.instantMinCents : 50)}).</p>
+    <section class="sec">
+      <div class="sec-head"><h2>Activity</h2>${txs.length > 5 ? '<button class="textbtn" id="w-all">See all</button>' : ''}</div>
+      ${txs.length ? `<div class="list">${txs.slice(0, 5).map(t => `
+        <div class="lrowbtn static"><span class="txicon ${t.type}">${t.type === 'deposit' ? '↓' : '↑'}</span><div class="lr-txt"><b>${t.type === 'deposit' ? 'Deposit' : 'Withdrawal'}</b><span>${t.speed === 'instant' ? 'Instant' : 'Standard'} · ${new Date(t.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></div>
+        <div class="txr"><span class="num ${t.type === 'deposit' ? 'up' : ''}">${t.type === 'deposit' ? '+' : '−'}${money(t.type === 'deposit' ? t.net : t.amount)}</span><span class="pill ${t.status}">${t.status === 'pending' ? 'On the way' : 'Done'}</span></div></div>`).join('')}</div>`
+        : '<div class="empty card-empty"><p>No activity yet.</p><p class="sub">Deposits and withdrawals will show up here.</p></div>'}
+    </section>
+    <button class="club-banner" id="w-club"><span><span class="lbl">${me.club && me.club.active ? 'Member' : `Pokr Club · ${money(499)}/mo`}</span><b>${me.club && me.club.active ? 'Pokr Club themes & avatars' : 'Unlock themes and avatars'}</b></span>${TICON.chev}</button>
+    ${me.canRefill ? '<button class="textbtn" id="refill">Reload play money (back to $1,000)</button>' : ''}`;
+  const bind = () => {
+    $('#w-dep').onclick = () => renderCashier('deposit');
+    $('#w-wd').onclick = () => renderCashier('withdraw');
+    const all = $('#w-all'); if (all) all.onclick = () => renderCashier();
+    $('#w-club').onclick = () => renderClub();
+    const r = $('#refill'); if (r) r.onclick = () => send({ t: 'refill' });
+  };
+  return { html, bind };
+}
+
+function tabMe() {
+  const me = S.me;
   const per = (me.periods && me.periods[S.period]) || me.stats;
   const winRate = per.hands ? Math.round((per.won / per.hands) * 100) : 0;
-  app.innerHTML = `
-  <div class="lobby">
-    <div class="topbar">
-      <h1 class="marquee" aria-label="Pokr">Pokr</h1>
-      <button class="me-chip" id="edit-me" title="Profile">${avatarHTML(me.avatar)}<span class="nm">${esc(me.name)}</span><span class="num">${money(me.bankroll)}</span></button>
+  const theme = ((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'The Lounge' }).name;
+  const html = `
+    ${largeTitle('Profile')}
+    <section class="profile-card">
+      ${avatarHTML(me.avatar)}
+      <div class="pc-txt"><b>${esc(me.name)}</b><span>${esc(me.email || '')}</span></div>
+      <button class="btn small" id="p-edit">Edit</button>
+    </section>
+    <section class="panel">
+      <div class="sec-head"><h2>Your stats</h2>
+        <label class="period"><span class="sr">Show stats for</span><select id="period">${PERIODS.map(([k, l]) => `<option value="${k}" ${S.period === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+      <div class="stats">
+        <div class="stat"><b class="${per.net > 0 ? 'up' : per.net < 0 ? 'down' : ''}">${signedMoney(per.net)}</b><span>Net</span></div>
+        <div class="stat"><b>${count(per.hands)}</b><span>Hands</span></div>
+        <div class="stat"><b>${winRate}%</b><span>Won</span></div>
+        <div class="stat"><b>${money(per.biggestPot)}</b><span>Best pot</span></div>
+      </div>
+    </section>
+    <div class="list">
+      <button class="lrowbtn" id="p-club"><div class="lr-txt"><b>Pokr Club & themes</b><span>${me.club && me.club.active ? 'Member · ' : ''}${esc(theme)}</span></div>${TICON.chev}</button>
+      <button class="lrowbtn" id="p-edit2"><div class="lr-txt"><b>Name & avatar</b><span>How you show up at the table</span></div>${TICON.chev}</button>
+      ${soonRow('Responsible play', 'Budgets, cool-offs and session timers')}
+      ${soonRow('Accessibility', 'Four-color deck, large text, screen reader')}
+      ${soonRow('Identity verification', 'Needed before real money')}
     </div>
-    ${Object.keys(me.atTablesBy || {}).length ? `<div class="seated">${Object.entries(me.atTablesBy).map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
-    <div class="lobby-grid">
-      <section class="panel a-open">
-        <h2>Open tables</h2>
-        ${!S.lobby ? skelRows(2) : L.tables.length ? `<div class="rows">${L.tables.map(t => `
-          <div class="trow"><span class="chip"></span><div class="txt"><span class="nm">${esc(t.name)}</span><span class="lbl">${blinds(t.sb, t.bb)} · ${t.players + t.bots}/${t.seats} seated</span></div><button class="btn ghost small" data-join="${t.code}">Join</button></div>`).join('')}</div>`
-          : `<div class="empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one and send the link to your friends.</p><button class="btn small" id="empty-start">Start a table</button></div>`}
-      </section>
-      <section class="panel bank a-bank">
-        <div class="bank-head"><span class="lbl">Bankroll${me.atTables ? ` · ${money(me.atTables)} at tables` : ''}</span>
-          <label class="period"><span class="sr">Show stats for</span><select id="period">${PERIODS.map(([k, l]) => `<option value="${k}" ${S.period === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-        <span class="num big">${money(me.bankroll)}</span>
-        <div class="stats">
-          <div class="stat"><b class="${per.net > 0 ? 'up' : per.net < 0 ? 'down' : ''}">${signedMoney(per.net)}</b><span>Net</span></div>
-          <div class="stat"><b>${count(per.hands)}</b><span>Hands</span></div>
-          <div class="stat"><b>${winRate}%</b><span>Won</span></div>
-          <div class="stat"><b>${money(per.biggestPot)}</b><span>Best pot</span></div>
-        </div>
-        <div class="acts"><button class="btn" id="go-dep">Deposit</button><button class="btn" id="go-wd">Withdraw</button></div>
-        ${me.canRefill ? '<button class="textbtn" id="refill">Reload play money (back to $1,000)</button>' : ''}
-      </section>
-      <section class="panel club-card a-club">
-        ${me.club && me.club.active
-          ? `<div class="cc-row"><div><span class="lbl">Pokr Club member</span><h2>${esc(((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'The Lounge' }).name)}</h2></div><button class="btn ghost small" id="go-club">Change theme</button></div>`
-          : `<div class="cc-row"><div><span class="lbl">Pokr Club · ${money(499)}/mo</span><h2>New themes and avatars</h2></div><button class="btn ghost small" id="go-club">See the club</button></div>`}
-      </section>
-      <form class="panel a-start" id="create">
-        <h2>Start a table</h2>
-        <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
-        <span class="lbl">Blinds</span>
-        <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
-        <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
-        <button class="btn primary" type="submit">Open the table</button>
-      </form>
-      <form class="panel a-join" id="joinf">
-        <h2>Got a code?</h2>
-        <div class="join-row"><input id="jcode" maxlength="8" placeholder="TG626" autocomplete="off" aria-label="Table code"><button class="btn" type="submit">Join</button></div>
-      </form>
-      <section class="panel a-board">
-        <h2>High Rollers</h2>
-        ${!S.lobby ? skelRows(3) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
-          <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar)}<span class="nm">${esc(p.name)}</span>
-          <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
-          : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot. Ranked by net winnings, all time.</p></div>'}
-      </section>
-    </div>
-    <p class="fine">Play money only for now. No real money.</p>
-  </div>`;
-  enter();
-  $('#edit-me').onclick = () => renderProfileEdit();
-  $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderLobby(); };
-  app.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
-    S.stakes = b.dataset.st;
-    app.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
-  });
-  $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
-  $('#create').onsubmit = e => { e.preventDefault(); send({ t: 'create', name: $('#tname').value, stakes: S.stakes, isPrivate: S.isPrivate }); };
-  $('#joinf').onsubmit = e => {
-    e.preventDefault();
-    const code = $('#jcode').value.trim().toUpperCase();
-    if (!code) return;
-    nav('/t/' + code); joinCode(code);
+    <div class="list"><button class="lrowbtn danger" id="p-logout"><div class="lr-txt"><b>Log out</b></div></button></div>`;
+  const bind = () => {
+    $('#p-edit').onclick = renderProfileEdit;
+    $('#p-edit2').onclick = renderProfileEdit;
+    $('#p-club').onclick = () => renderClub();
+    $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderTabs(); };
+    $('#p-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; S.tab = 'play'; send({ t: 'logout' }); };
   };
-  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
-  const r = $('#refill'); if (r) r.onclick = () => send({ t: 'refill' });
-  $('#go-dep').onclick = () => renderCashier('deposit');
-  $('#go-wd').onclick = () => renderCashier('withdraw');
-  $('#go-club').onclick = () => renderClub();
-  app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
-  const es = $('#empty-start'); if (es) es.onclick = () => { const n = $('#tname'); n.scrollIntoView({ behavior: 'smooth', block: 'center' }); n.focus({ preventScroll: true }); };
+  return { html, bind };
+}
+
+// bottom sheet on phones, centered card on computers
+function openSheet(html, after) {
+  $('#modal').innerHTML = `<div class="mscrim sheetish"><div class="panel dialog" role="dialog" aria-modal="true"><span class="grab" aria-hidden="true"></span>${html}</div></div>`;
+  const scrim = $('#modal .mscrim');
+  scrim.onclick = e => { if (e.target === scrim || e.target.hasAttribute('data-close')) closeModal(); };
+  if (after) after();
 }
 
 /* ---------------- Pokr Club: themes + avatars ---------------- */
@@ -377,7 +517,7 @@ const THEME_LOOK = {
   zebra: { wall: '#F2EDE4', felt: '#8E1520', accent: '#F2EDE4' },
 };
 function pageBar(title) {
-  return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Lobby</button><h1 class="marquee">${title}</h1><span class="pb-gap"></span></div>`;
+  return `<div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Back</button><h1 class="marquee">${title}</h1><span class="pb-gap"></span></div>`;
 }
 function renderClub() {
   leaveTableView();
