@@ -35,27 +35,62 @@ const LOGO = 'p<span class="chip-o" aria-hidden="true"></span>kr';
 (function splash() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   try { if (sessionStorage.getItem('pokr.splashed')) return; sessionStorage.setItem('pokr.splashed', '1'); } catch { /* storage blocked: show it */ }
+  // The letters spiral in, a ring of chips spirals onto the o and collapses into one chip, the chip flips.
   const el = document.createElement('div');
   el.id = 'splash';
   el.setAttribute('aria-hidden', 'true');
-  const colors = ['#C8202B', '#F4ECDC', '#2E8F86', '#151010', '#3E5FB0', '#D9A84E'];
-  let chips = '';
-  for (let i = 0; i < 18; i++) {
-    const ang = (i / 18) * Math.PI * 2 + Math.random() * .4;
-    const far = 75 + Math.random() * 25;           // start off-screen, in vmax
-    const near = 10 + Math.random() * 26;          // where it hovers around the logo, in vmin
-    const out = 90 + Math.random() * 40;           // where it bursts to
-    const x0 = Math.cos(ang) * far, y0 = Math.sin(ang) * far;
-    const x1 = Math.cos(ang + .5) * near, y1 = Math.sin(ang + .5) * near * .7;
-    const x2 = Math.cos(ang + .7) * out, y2 = Math.sin(ang + .7) * out;
-    const size = 26 + Math.round(Math.random() * 30);
-    chips += `<i style="--x0:${x0.toFixed(1)}vmax;--y0:${y0.toFixed(1)}vmax;--x1:${x1.toFixed(1)}vmin;--y1:${y1.toFixed(1)}vmin;--x2:${x2.toFixed(1)}vmax;--y2:${y2.toFixed(1)}vmax;--s:${size}px;--c:${colors[i % colors.length]};--d:${i * 28}ms;--r:${Math.round(Math.random() * 720 - 360)}deg"></i>`;
-  }
-  el.innerHTML = `<div class="sp-chips">${chips}</div><div class="sp-logo logo"><span class="l1">p</span><span class="chip-o"></span><span class="l2">k</span><span class="l3">r</span></div>`;
+  const letter = (ch, a, d) => `<span class="sp-l" style="--a:${a}deg;--d:${d}ms">${ch}</span>`;
+  el.innerHTML = `<div class="sp-logo logo">${letter('p', 470, 60)}<span class="chip-o sp-o"></span>${letter('k', -430, 150)}${letter('r', 520, 230)}</div><div class="sp-chips"></div>`;
   document.body.appendChild(el);
-  const done = () => { if (!el.isConnected) return; el.classList.add('gone'); setTimeout(() => el.remove(), 420); };
-  el.addEventListener('click', done);
-  setTimeout(done, 2300);
+
+  // Center the chip vortex on the o.
+  const oEl = el.querySelector('.sp-o'), o = oEl.getBoundingClientRect(), size = oEl.offsetWidth; // offsetWidth ignores the chip's starting scale
+  const ring = el.querySelector('.sp-chips');
+  ring.style.left = (o.left + o.width / 2) + 'px';
+  ring.style.top = (o.top + o.height / 2) + 'px';
+  const colors = ['#C8202B', '#F4ECDC', '#2E8F86', '#151010', '#3E5FB0', '#D9A84E'];
+  const N = 14, DUR = 1050, landings = [];
+  let chips = '';
+  for (let i = 0; i < N; i++) {
+    const a0 = Math.round(i * 360 / N + Math.random() * 18);
+    const d = Math.round(40 + i * 24 + Math.random() * 40);
+    landings.push(d + DUR);
+    chips += `<i style="--a0:${a0}deg;--a1:${a0 + 640 + Math.round(Math.random() * 120)}deg;--R:${(62 + Math.random() * 18).toFixed(1)}vmax;--s:${size}px;--c:${colors[i % colors.length]};--d:${d}ms"></i>`;
+  }
+  ring.innerHTML = chips;
+
+  // Chip clacks, synthesized so there's no sound file to load. Browsers only allow sound after a tap,
+  // so on a cold open this is usually silent; a tap during the splash turns it on.
+  let ctx = null;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* no audio */ }
+  const clack = (when, loud = 1) => {
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime + Math.max(0, when) / 1000;
+    const len = Math.floor(ctx.sampleRate * .05), buf = ctx.createBuffer(1, len, ctx.sampleRate), data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 6);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600 + Math.random() * 1600; bp.Q.value = 3;
+    const g = ctx.createGain(); g.gain.value = .55 * loud;
+    src.connect(bp).connect(g).connect(ctx.destination); src.start(t);
+    const tone = ctx.createOscillator(), tg = ctx.createGain();
+    tone.frequency.value = 1900 + Math.random() * 900; tg.gain.setValueAtTime(.08 * loud, t); tg.gain.exponentialRampToValueAtTime(.0001, t + .07);
+    tone.connect(tg).connect(ctx.destination); tone.start(t); tone.stop(t + .08);
+  };
+  const t0 = performance.now();
+  const FLIP = 2330; // when the flipped chip lands
+  const playFrom = () => {
+    const now = performance.now() - t0;
+    landings.forEach(ms => { if (ms > now) clack(ms - now, .7); });
+    if (FLIP > now) { clack(FLIP - now, 1.2); clack(FLIP - now + 45, .8); }
+  };
+  if (ctx) { if (ctx.state === 'running') playFrom(); else ctx.resume().then(() => { if (performance.now() - t0 < 300) playFrom(); }).catch(() => {}); }
+
+  const done = () => { if (!el.isConnected) return; el.classList.add('gone'); setTimeout(() => { el.remove(); if (ctx) ctx.close().catch(() => {}); }, 420); };
+  el.addEventListener('click', () => {
+    if (ctx && ctx.state !== 'running' && performance.now() - t0 < FLIP) { ctx.resume().then(playFrom).catch(() => {}); return; }
+    done();
+  });
+  setTimeout(done, 3000);
 })();
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // all amounts are whole cents; show them as dollars

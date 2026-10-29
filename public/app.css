@@ -757,35 +757,42 @@ button.lrowbtn:active { background: rgba(255, 255, 255, .06); }
 .boot .logo { opacity: .9; }
 
 /* =====================================================================
-   SPLASH — chips fly in, the wordmark sets, chips burst away.
+   SPLASH — the letters spiral in, the chips spiral onto the o and become one chip, it flips.
    ===================================================================== */
 #splash { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; cursor: pointer;
   background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--felt) 55%, var(--velvet)), var(--velvet) 70%); transition: opacity .4s var(--ease); }
 #splash.gone { opacity: 0; pointer-events: none; }
-.sp-chips { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.sp-logo { position: relative; z-index: 2; font-size: clamp(84px, 26vw, 150px); text-shadow: 0 6px 30px rgba(0, 0, 0, .55); perspective: 600px; }
+/* rotate(a) translate(R) rotate(-a): as a and R shrink together the letter travels a spiral and stays upright */
+.sp-l { display: inline-block; opacity: 0; animation: spiralin 1.05s cubic-bezier(.2, .75, .25, 1) var(--d) both; }
+@keyframes spiralin {
+  0% { opacity: 0; transform: rotate(var(--a)) translateX(55vmax) rotate(calc(var(--a) * -1)) scale(.5); filter: blur(4px); }
+  25% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(0deg) translateX(0) rotate(0deg) scale(1); filter: none; }
+}
+.sp-chips { position: fixed; width: 0; height: 0; z-index: 3; pointer-events: none; }
 .sp-chips i {
   position: absolute; left: calc(var(--s) / -2); top: calc(var(--s) / -2); width: var(--s); height: var(--s); border-radius: 50%;
-  background: radial-gradient(circle, var(--c) 0 38%, rgba(255, 255, 255, .85) 39% 42%, var(--c) 43%);
-  border: calc(var(--s) * .13) dashed rgba(255, 255, 255, .9); box-shadow: 0 0 0 2px var(--c), 0 calc(var(--s) * .08) 0 rgba(0, 0, 0, .35), 0 10px 24px rgba(0, 0, 0, .4);
-  opacity: 0; animation: chipfly 1.75s cubic-bezier(.22, .9, .3, 1) var(--d) both;
+  background: radial-gradient(circle, var(--c) 0 36%, rgba(255, 255, 255, .85) 37% 41%, var(--c) 42%);
+  border: calc(var(--s) * .15) dashed rgba(255, 255, 255, .9); box-shadow: 0 0 0 2px var(--c), 0 10px 24px rgba(0, 0, 0, .4);
+  opacity: 0; animation: vortex 1.05s cubic-bezier(.55, .05, .8, .6) var(--d) both;
 }
-@keyframes chipfly {
-  0% { opacity: 0; transform: translate(var(--x0), var(--y0)) rotate(0deg) scale(.8); }
+@keyframes vortex {
+  0% { opacity: 0; transform: rotate(var(--a0)) translateX(var(--R)) rotate(0deg) scale(1.15); }
   12% { opacity: 1; }
-  45% { transform: translate(var(--x1), var(--y1)) rotate(var(--r)) scale(1); }
-  62% { opacity: 1; transform: translate(calc(var(--x1) * 1.05), calc(var(--y1) * 1.05)) rotate(calc(var(--r) * 1.1)) scale(1); }
-  100% { opacity: 0; transform: translate(var(--x2), var(--y2)) rotate(calc(var(--r) * 1.6)) scale(.9); }
+  92% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(var(--a1)) translateX(0) rotate(900deg) scale(1); }
 }
-.sp-logo { position: relative; z-index: 2; font-size: clamp(84px, 26vw, 150px); text-shadow: 0 6px 30px rgba(0, 0, 0, .55); }
-.sp-logo .l1, .sp-logo .l2, .sp-logo .l3 { display: inline-block; opacity: 0; animation: letterup .55s var(--ease) both; }
-.sp-logo .l1 { animation-delay: .62s; } .sp-logo .l2 { animation-delay: .74s; } .sp-logo .l3 { animation-delay: .82s; }
-@keyframes letterup { from { opacity: 0; transform: translateY(.35em); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
-.sp-logo .chip-o { animation: chipdrop .75s cubic-bezier(.3, 1.4, .5, 1) .9s both; }
-@keyframes chipdrop {
-  0% { opacity: 0; transform: translateY(-2.2em) rotate(-540deg) scale(1.4); }
-  60% { opacity: 1; transform: translateY(.06em) rotate(0) scale(1); }
-  80% { transform: translateY(-.06em) scale(1.04); }
-  100% { opacity: 1; transform: translateY(.02em) rotate(0) scale(1); }
+.sp-logo .sp-o { opacity: 0; animation: chipform 1.4s linear 1.15s both; }
+@keyframes chipform {
+  0% { opacity: 0; transform: translateY(.02em) scale(.3); }
+  10% { opacity: 1; transform: translateY(.02em) scale(1.18); }
+  20% { transform: translateY(.02em) scale(.96); }
+  30% { transform: translateY(.02em) scale(1); animation-timing-function: cubic-bezier(.5, 0, .3, 1); }
+  /* the flip: up and over, landing with a little bounce */
+  70% { transform: translateY(-.28em) rotateY(360deg) scale(1.08); animation-timing-function: cubic-bezier(.5, 0, .7, 1.4); }
+  86% { transform: translateY(.04em) rotateY(360deg) scale(1); }
+  100% { opacity: 1; transform: translateY(.02em) rotateY(360deg) scale(1); }
 }
 
 /* ---------- blinds filter ---------- */
