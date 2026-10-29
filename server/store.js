@@ -36,14 +36,14 @@ class Store {
     this.bySession = new Map();
     if (fs.existsSync(this.file)) {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      for (const u of raw.users || []) if (u.email) this._index(u); // pre-account guest profiles are dropped
+      for (const u of raw.users || []) if (u.email || u.guest) this._index(u); // pre-account profiles without either are dropped
     }
     this.saveTimer = null;
   }
 
   _index(u) {
     this.users.set(u.id, u);
-    this.byEmailMap.set(u.email, u);
+    if (u.email) this.byEmailMap.set(u.email, u);
     for (const s of u.sessions || []) this.bySession.set(s, u);
   }
 
@@ -73,6 +73,22 @@ class Store {
     this._index(u);
     const token = this.newSession(u);
     this.ledger(u, 'signup', START_BANKROLL, 'starting play money');
+    this.save();
+    return { user: u, token };
+  }
+
+  // Accounts are switched off for now: a name is enough. Real money will require a full account
+  // (email, password, ID) before launch, and a guest can be upgraded then.
+  guest({ name, avatar }) {
+    const u = {
+      id: 'u_' + crypto.randomBytes(8).toString('hex'), guest: true, email: null, pass: null,
+      name, avatar, bankroll: START_BANKROLL, atTables: {},
+      stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hourly: {},
+      verification: { status: 'not_started' }, sessions: [], createdAt: Date.now(),
+    };
+    this._index(u);
+    const token = this.newSession(u);
+    this.ledger(u, 'signup', START_BANKROLL, 'starting play money (guest)');
     this.save();
     return { user: u, token };
   }

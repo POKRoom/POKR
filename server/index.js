@@ -44,7 +44,7 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
@@ -136,6 +136,18 @@ const handlers = {
     if (!validAvatar(m.avatar) || m.avatar.a >= shop.FREE_AVATARS) return send(c, { t: 'authError', message: 'Pick an avatar' });
     const r = store.signup({ email: m.email, password: m.password, name, avatar: { a: m.avatar.a, c: m.avatar.c } });
     if (r.error) return send(c, { t: 'authError', message: r.error });
+    c.userId = r.user.id; c.token = r.token;
+    send(c, { t: 'token', token: r.token });
+    send(c, { t: 'me', user: meOf(r.user) });
+    send(c, { t: 'catalog', catalog: shop.catalog() });
+  },
+
+  guest(c, m) {
+    if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
+    const name = cleanText(m.name, 16);
+    if (name.length < 2) return send(c, { t: 'authError', message: 'Pick a name with at least 2 characters' });
+    const avatar = validAvatar(m.avatar) && m.avatar.a < shop.FREE_AVATARS ? { a: m.avatar.a, c: m.avatar.c } : { a: 0, c: Math.floor(Math.random() * 8) };
+    const r = store.guest({ name, avatar });
     c.userId = r.user.id; c.token = r.token;
     send(c, { t: 'token', token: r.token });
     send(c, { t: 'me', user: meOf(r.user) });
@@ -344,7 +356,7 @@ attach(server, ws => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string' || !Object.prototype.hasOwnProperty.call(handlers, m.t)) return;
-    if (!['hello', 'signup', 'login'].includes(m.t) && !c.userId) return send(c, { t: 'needProfile' });
+    if (!['hello', 'signup', 'login', 'guest'].includes(m.t) && !c.userId) return send(c, { t: 'needProfile' });
     try { handlers[m.t](c, m); } catch (e) { console.error(e); send(c, { t: 'error', message: 'Something went wrong on the server' }); }
   });
   ws.on('close', () => {

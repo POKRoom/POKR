@@ -307,7 +307,38 @@ function bindAvatarGrid() {
     app.querySelectorAll('[data-a]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.a === S.draft));
   });
 }
+// Accounts (email + password) are off for now: players just pick a name. Flip this to true
+// when accounts come back; they're required before any real money.
+const ACCOUNTS = false;
+function renderGuest() {
+  S.view = 'auth';
+  const fan = [12, 24, 36, 48].map((c, i) => cardHTML(c).replace('class="pc', `style="left:${22 + i * 44}px;top:${[4, 1, 1, 4][i] + 6}px;transform:rotate(${[-16, -5, 6, 17][i]}deg)" class="pc`)).join('');
+  app.innerHTML = `
+  <main class="welcome">
+    <h1 class="logo xl" aria-label="Pokr">${LOGO}</h1>
+    <p class="tagline">The card room for you and your friends.</p>
+    <div class="fan" aria-hidden="true">${fan}</div>
+    <form class="panel pf" id="auth" novalidate>
+      <div class="field"><label class="lbl" for="au-name">Name at the table</label>
+        <input id="au-name" maxlength="16" autocomplete="nickname" placeholder="What should the table call you?"></div>
+      <p class="formerr" id="au-err" role="alert" hidden></p>
+      <button class="btn primary" type="submit" id="au-go">Let’s play</button>
+    </form>
+    <p class="fine">You start with $1,000 in play money. No real money.</p>
+  </main>`;
+  enter();
+  $('#auth').onsubmit = e => {
+    e.preventDefault();
+    const name = $('#au-name').value.trim();
+    if (name.length < 2) { const el = $('#au-err'); el.textContent = 'Pick a name with at least 2 characters'; el.hidden = false; return; }
+    const a = Math.floor(Math.random() * 16);
+    send({ t: 'guest', name, avatar: { a, c: a % 8 } });
+    $('#au-go').disabled = true;
+  };
+  $('#au-name').focus();
+}
 function renderAuth(mode) {
+  if (!ACCOUNTS) return renderGuest();
   S.view = 'auth'; S.authMode = mode;
   const fan = [12, 24, 36, 48].map((c, i) => cardHTML(c).replace('class="pc', `style="left:${22 + i * 44}px;top:${[4, 1, 1, 4][i] + 6}px;transform:rotate(${[-16, -5, 6, 17][i]}deg)" class="pc`)).join('');
   const signup = mode === 'signup';
@@ -372,16 +403,16 @@ function renderProfileEdit() {
       <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
         <input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>
       <div class="field"><span class="lbl">Avatar</span>${avatarGrid(true)}<button type="button" class="textbtn" id="pf-more">More avatars in Pokr Club ›</button></div>
-      <div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>
+      ${S.me.guest ? '' : `<div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>`}
       <button class="btn primary" type="submit">Save</button>
-      <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button><button class="btn ghost" type="button" id="pf-logout">Log out</button></div>
+      <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button>${S.me.guest ? '' : '<button class="btn ghost" type="button" id="pf-logout">Log out</button>'}</div>
     </form>
   </main>`;
   enter();
   bindAvatarGrid();
   $('#pf-cancel').onclick = () => goLobby();
   $('#pf-more').onclick = () => renderClub();
-  $('#pf-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; send({ t: 'logout' }); };
+  if ($('#pf-logout')) $('#pf-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; send({ t: 'logout' }); };
   $('#pf').onsubmit = e => {
     e.preventDefault();
     const name = $('#pf-name').value.trim();
@@ -588,7 +619,7 @@ function tabMe() {
     ${largeTitle('Profile')}
     <section class="profile-card">
       ${avatarHTML(me.avatar, me.name)}
-      <div class="pc-txt"><b>${esc(me.name)}</b><span>${esc(me.email || '')}</span></div>
+      <div class="pc-txt"><b>${esc(me.name)}</b><span>${me.guest ? 'Playing as a guest' : esc(me.email || '')}</span></div>
       <button class="btn small" id="p-edit">Edit</button>
     </section>
     <section class="panel">

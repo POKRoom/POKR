@@ -27,7 +27,7 @@
     const now = Date.now();
     const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
     const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
-    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
   };
   const sendMe = () => { if (db.user) out({ t: 'me', user: meOf(db.user) }); };
   const sendCatalog = () => out({ t: 'catalog', catalog: shop.catalog() });
@@ -112,6 +112,15 @@
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return out({ t: 'authError', message: 'Enter a valid email address' });
       if (String(m.password || '').length < 8) return out({ t: 'authError', message: 'Use a password with at least 8 characters' });
       db.user = { id: 'me', email, pw: pwHash(m.password), name, avatar: m.avatar, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
+      db.token = Math.random().toString(36).slice(2);
+      persist();
+      out({ t: 'token', token: db.token });
+      sendMe(); sendCatalog();
+    },
+    guest(c, m) {
+      const name = String(m.name || '').trim().slice(0, 16);
+      if (name.length < 2) return out({ t: 'authError', message: 'Pick a name with at least 2 characters' });
+      db.user = { id: 'me', guest: true, email: null, name, avatar: m.avatar || { a: 0, c: 0 }, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
       db.token = Math.random().toString(36).slice(2);
       persist();
       out({ t: 'token', token: db.token });
@@ -228,7 +237,7 @@
       let m; try { m = JSON.parse(raw); } catch { return; }
       setTimeout(() => {
         if (!H[m.t]) return;
-        if (!['hello', 'signup', 'login'].includes(m.t) && (!db.user || !db.token)) return out({ t: 'needProfile' });
+        if (!['hello', 'signup', 'login', 'guest'].includes(m.t) && (!db.user || !db.token)) return out({ t: 'needProfile' });
         try { H[m.t](this, m); } catch (e) { console.error(e); }
       }, 0);
     }
