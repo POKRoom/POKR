@@ -133,7 +133,12 @@ const S = {
   draft: Math.floor(Math.random() * AVATARS.length),
 };
 
-function avatarHTML(av) {
+// With a name, avatars render as a quiet monogram on a toned disc (the serious look);
+// the emoji set is only used in the picker for now.
+const TONES = ['#5A3A36', '#5B4A2E', '#2F4A44', '#33405A', '#463A55', '#563945', '#3C4A35', '#46403B'];
+function initials(name) { const w = String(name || '?').trim().split(/\s+/); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+function avatarHTML(av, name) {
+  if (name) return `<span class="ava mono" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true">${esc(initials(name))}</span>`;
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
   return `<span class="ava" style="--ac:${COLORS[(av && av.c) || 0]}" aria-hidden="true">${glyph}</span>`;
 }
@@ -395,7 +400,7 @@ function renderTabs() {
   const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
-      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
@@ -415,7 +420,7 @@ function tabPlay() {
   const shown = (L.tables || []).filter(t => S.blindFilter === 'all' || STAKES.some(([k, sb, bb]) => k === S.blindFilter && t.sb === sb && t.bb === bb));
   const dots = (n, of) => `<span class="dots" aria-label="${n} of ${of} seats taken">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
   const html = `
-    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${avatarHTML(me.avatar)}${chipNum(me.bankroll)}</button>`, `${greet()}, ${esc(me.name)}`)}
+    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${chipNum(me.bankroll)}</button>`, `${greet()}, ${esc(me.name)}`)}
     ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
     <section class="sec">
       <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${shown.length}</span>` : ''}</div>
@@ -505,7 +510,7 @@ function tabSocial() {
     ${board ? `<section class="panel">
       <div class="sec-head"><h2>High Rollers</h2><span class="lbl">All time</span></div>
       ${!S.lobby ? skelRows(4) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
-        <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar)}<span class="nm">${esc(p.name)}</span>
+        <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar, p.name)}<span class="nm">${esc(p.name)}</span>
         <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
         : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot.</p></div>'}
     </section>` : `
@@ -532,7 +537,7 @@ function tabWallet() {
     ${largeTitle('Wallet')}
     <section class="balance-card">
       <div class="bc-top"><div class="bc-amt"><span class="lbl">Balance</span>
-      <span class="big">${chipNum(me.bankroll)}</span></div>${chipStack(me.bankroll, { max: 15, cols: 3, cls: 'bc-stack' })}</div>
+      <span class="big">${chipNum(me.bankroll)}</span></div></div>
       <span class="sub">${me.atTables ? `${money(me.atTables)} at tables · ` : ''}${pending ? `${pending} transfer${pending > 1 ? 's' : ''} on the way · ` : ''}Test mode</span>
       <div class="acts"><button class="btn primary" id="w-dep">Deposit</button><button class="btn" id="w-wd">Withdraw</button></div>
     </section>
@@ -560,11 +565,11 @@ function tabMe() {
   const me = S.me;
   const per = (me.periods && me.periods[S.period]) || me.stats;
   const winRate = per.hands ? Math.round((per.won / per.hands) * 100) : 0;
-  const theme = ((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'After Dark' }).name;
+  const theme = ((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'Black Room' }).name;
   const html = `
     ${largeTitle('Profile')}
     <section class="profile-card">
-      ${avatarHTML(me.avatar)}
+      ${avatarHTML(me.avatar, me.name)}
       <div class="pc-txt"><b>${esc(me.name)}</b><span>${esc(me.email || '')}</span></div>
       <button class="btn small" id="p-edit">Edit</button>
     </section>
@@ -658,7 +663,7 @@ function renderClub() {
   </div>`;
   $('#pg-back').onclick = goLobby;
   const j = $('#club-join'); if (j) j.onclick = () => send({ t: 'club', action: 'join' });
-  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to the After Dark theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
+  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to the Black Room theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
   app.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
     if (b.dataset.locked) { toast('That theme comes with Pokr Club'); return; }
     send({ t: 'setTheme', theme: b.dataset.theme });
@@ -895,7 +900,7 @@ function renderFeed() {
   if (S.sideTab === 'chat') {
     feed.innerHTML = S.chat.length ? S.chat.map(m => m.sys
       ? `<div class="msg sys">${esc(m.text)}</div>`
-      : `<div class="msg">${avatarHTML(m.avatar)}<div class="body"><span class="who">${esc(m.name)}</span><span>${esc(m.text)}</span></div></div>`).join('')
+      : `<div class="msg">${avatarHTML(m.avatar, m.name)}<div class="body"><span class="who">${esc(m.name)}</span><span>${esc(m.text)}</span></div></div>`).join('')
       : '<div class="empty"><p>It’s quiet in here.</p><p class="sub">Say hi, or send a reaction.</p></div>';
   } else {
     const log = S.table ? S.table.log : [];
@@ -962,7 +967,7 @@ function renderStage() {
   let html = `<div class="rail"><div class="felt">
     <div class="street">${T.phase === 'play' || T.phase === 'done' ? esc(T.street) + ' · Hand ' + T.handNo : 'Table open'}</div>
     <div class="board" aria-label="Board">${board}</div>
-    ${T.pot ? `<div class="pot">${chipStack(T.pot, { unit: T.bb, max: 6, cols: 2, cls: 'pot-stack' })}${chipNum(T.pot)}</div>` : ''}
+    ${T.pot ? `<div class="pot"><span class="lbl">Pot</span>${chipNum(T.pot)}</div>` : ''}
     <div class="fmsg ${result ? 'result' : ''}">${msg}</div>
   </div></div>`;
 
@@ -997,7 +1002,7 @@ function renderStage() {
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
       <div class="pod">
         ${hole ? `<div class="hole">${hole}</div>` : ''}
-        <div class="av">${avatarHTML(s.avatar)}${turn ? '<span class="ring" id="ring"></span>' : ''}${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer">D</span>' : ''}</div>
+        <div class="av">${avatarHTML(s.avatar, s.name)}${turn ? '<span class="ring" id="ring"></span>' : ''}${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer">D</span>' : ''}</div>
         <div class="plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></div>
         ${tag ? `<span class="act ${tone}">${esc(tag)}</span>` : ''}
       </div>
@@ -1005,7 +1010,7 @@ function renderStage() {
     </div>`;
     if (s.bet > 0) {
       const bx = x + (50 - x) * 0.5, by = y + (48 - y) * 0.5;
-      html += `<div class="bet" style="left:${bx}%;top:${by}%">${chipStack(s.bet, { unit: T.bb, max: 5 })}<span class="amt">${fmt(s.bet)}</span></div>`;
+      html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bdot"></span><span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
   stage.innerHTML = html;
@@ -1052,7 +1057,6 @@ function renderMine(force) {
   let html = `<div class="hero">
     <div class="mycards">${cards || '<div class="pc empty"></div><div class="pc empty"></div>'}</div>
     <div class="myinfo"><span class="hand">${esc(handLine)}</span>${chipNum(me.chips, 'mystack')}</div>
-    ${chipStack(me.chips, { unit: T.bb, max: 10, cols: 2, cls: 'my-cstack' })}
   </div>`;
 
   if (myTurn && S.raiseOpen && A.canRaise) {

@@ -11,7 +11,7 @@
 const CLUB = { priceCents: 499, period: 'month', name: 'Pokr Club' };
 
 const THEMES = [
-  { id: 'lounge', name: 'After Dark', blurb: 'Warm charcoal, amber light, green felt', club: false },
+  { id: 'lounge', name: 'Black Room', blurb: 'Graphite, deep green felt, a touch of gold', club: false },
   { id: 'neon', name: 'Neon Strip', blurb: 'Black glass, hot pink and electric blue', club: true },
   { id: 'monaco', name: 'Monte Carlo', blurb: 'Midnight navy felt with gold leaf', club: true },
   { id: 'zebra', name: 'Zebra Room', blurb: 'Lacquer-red felt and zebra-print walls', club: true },
