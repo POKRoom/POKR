@@ -30,6 +30,7 @@ const html = `<title>Pokr Preview</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,600;0,6..96,700;1,6..96,600;1,6..96,700&family=DM+Mono:wght@500&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Yellowtail&display=swap">
 <style>
 ${css}
+:root { --chrome: 46px; } .tbl { min-height: calc(100dvh - var(--chrome)); }
 .preview-bar { max-width: 1180px; margin: 10px auto 0; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); text-align: center; }
 .preview-bar b { color: var(--brass); font-weight: 600; }
 </style>

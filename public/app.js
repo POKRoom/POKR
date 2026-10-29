@@ -98,6 +98,26 @@ const money = c => { const d = (c || 0) / 100; return '$' + d.toLocaleString('en
 const fmt = money;
 const signedMoney = n => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n));
 const signed = signedMoney;
+// Big numbers styled like chip values: a chip, a small $, bold dollars, small cents.
+function chipNum(c, cls = '') {
+  const neg = (c || 0) < 0, d = Math.abs(c || 0) / 100;
+  const [w, f] = d.toFixed(2).split('.');
+  const whole = Number(w).toLocaleString('en-US');
+  return `<span class="cv ${cls}" aria-label="${neg ? 'minus ' : ''}${money(Math.abs(c || 0))}"><i class="cv-chip" aria-hidden="true"></i><span aria-hidden="true">${neg ? '−' : ''}<span class="cv-d">$</span>${whole}${f !== '00' ? `<span class="cv-c">.${f}</span>` : ''}</span></span>`;
+}
+// A stack of chips whose height follows the amount (log scale, so $5 and $5,000 both look right).
+const STACK_COLORS = ['#C8202B', '#F4ECDC', '#2E8F86', '#3E5FB0', '#151010', '#D9A84E'];
+function chipStack(c, { max = 12, unit = 100, cols = 1, cls = '' } = {}) {
+  const n = c > 0 ? Math.max(1, Math.min(max, Math.round(Math.log10(c / unit + 1) * 4))) : 0;
+  const per = Math.ceil(n / cols);
+  let html = '';
+  for (let k = 0; k < cols; k++) {
+    const h = Math.max(0, Math.min(per, n - k * per));
+    if (!h) continue;
+    html += `<span class="col">${Array.from({ length: h }, (_, i) => `<i style="--c:${STACK_COLORS[(k * 2 + Math.floor(i / 3)) % STACK_COLORS.length]};--i:${i}"></i>`).join('')}</span>`;
+  }
+  return `<span class="cstack ${cls}" style="--n:${per}" aria-hidden="true">${html}</span>`;
+}
 const count = n => Number(n || 0).toLocaleString('en-US');
 const blindAmt = c => (c < 100 ? c + '¢' : money(c));
 const blinds = (sb, bb) => `${blindAmt(sb)}/${blindAmt(bb)}`;
@@ -120,11 +140,11 @@ function avatarHTML(av) {
 function cardHTML(c, cls = '', style = '') {
   const st = style ? ` style="${style}"` : '';
   if (c === undefined) return `<div class="pc empty ${cls}" aria-hidden="true"></div>`;
-  if (c === null) return `<div class="pc back ${cls}"${st} aria-label="Face-down card"></div>`;
+  if (c === null) return `<div class="pc back ${cls}"${st} aria-label="Face-down card"><i class="bk-mark"></i></div>`;
   const r = c % 13 + 2, s = Math.floor(c / 13);
   const rt = { 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[r] || String(r);
   const suit = `<svg viewBox="0 0 24 24">${SUIT_SVG[s]}</svg>`;
-  return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="r">${rt}</span><span class="s1">${suit}</span><span class="s2">${suit}</span></div>`;
+  return `<div class="pc ${s === 1 || s === 2 ? 'red' : ''} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="ix"><span class="r">${rt}</span><span class="s1">${suit}</span></span><span class="s2">${suit}</span></div>`;
 }
 // toast with an optional fix-it action: toast('Not enough money', ['Cashier', () => renderCashier('deposit')])
 function toast(text, action) {
@@ -361,6 +381,8 @@ const TICON = {
   key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
 };
+const suitIcon = i => `<svg viewBox="0 0 24 24" class="suit"><g class="f" fill="currentColor">${SUIT_SVG[i]}</g></svg>`;
+TICON.play = suitIcon(0); TICON.games = suitIcon(1); TICON.social = suitIcon(3); TICON.wallet = suitIcon(2);
 const TABS = [['play', 'Play'], ['games', 'Home games'], ['social', 'Social'], ['wallet', 'Wallet'], ['me', 'Profile']];
 
 function renderTabs() {
@@ -373,7 +395,7 @@ function renderTabs() {
   const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
-      ${TABS.map(([k, l]) => `<button class="tab" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
@@ -393,7 +415,7 @@ function tabPlay() {
   const shown = (L.tables || []).filter(t => S.blindFilter === 'all' || STAKES.some(([k, sb, bb]) => k === S.blindFilter && t.sb === sb && t.bb === bb));
   const dots = (n, of) => `<span class="dots" aria-label="${n} of ${of} seats taken">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
   const html = `
-    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${avatarHTML(me.avatar)}<span class="num">${money(me.bankroll)}</span></button>`, `${greet()}, ${esc(me.name)}`)}
+    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${avatarHTML(me.avatar)}${chipNum(me.bankroll)}</button>`, `${greet()}, ${esc(me.name)}`)}
     ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
     <section class="sec">
       <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${shown.length}</span>` : ''}</div>
@@ -509,8 +531,8 @@ function tabWallet() {
   const html = `
     ${largeTitle('Wallet')}
     <section class="balance-card">
-      <span class="lbl">Balance</span>
-      <span class="num big">${money(me.bankroll)}</span>
+      <div class="bc-top"><div class="bc-amt"><span class="lbl">Balance</span>
+      <span class="big">${chipNum(me.bankroll)}</span></div>${chipStack(me.bankroll, { max: 15, cols: 3, cls: 'bc-stack' })}</div>
       <span class="sub">${me.atTables ? `${money(me.atTables)} at tables · ` : ''}${pending ? `${pending} transfer${pending > 1 ? 's' : ''} on the way · ` : ''}Test mode</span>
       <div class="acts"><button class="btn primary" id="w-dep">Deposit</button><button class="btn" id="w-wd">Withdraw</button></div>
     </section>
@@ -538,7 +560,7 @@ function tabMe() {
   const me = S.me;
   const per = (me.periods && me.periods[S.period]) || me.stats;
   const winRate = per.hands ? Math.round((per.won / per.hands) * 100) : 0;
-  const theme = ((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'The Lounge' }).name;
+  const theme = ((S.catalog && S.catalog.themes.find(t => t.id === me.theme)) || { name: 'After Dark' }).name;
   const html = `
     ${largeTitle('Profile')}
     <section class="profile-card">
@@ -636,7 +658,7 @@ function renderClub() {
   </div>`;
   $('#pg-back').onclick = goLobby;
   const j = $('#club-join'); if (j) j.onclick = () => send({ t: 'club', action: 'join' });
-  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to The Lounge theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
+  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to the After Dark theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
   app.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
     if (b.dataset.locked) { toast('That theme comes with Pokr Club'); return; }
     send({ t: 'setTheme', theme: b.dataset.theme });
@@ -940,7 +962,7 @@ function renderStage() {
   let html = `<div class="rail"><div class="felt">
     <div class="street">${T.phase === 'play' || T.phase === 'done' ? esc(T.street) + ' · Hand ' + T.handNo : 'Table open'}</div>
     <div class="board" aria-label="Board">${board}</div>
-    ${T.pot ? `<div class="pot"><span class="chip"></span>${fmt(T.pot)}</div>` : ''}
+    ${T.pot ? `<div class="pot">${chipStack(T.pot, { unit: T.bb, max: 6, cols: 2, cls: 'pot-stack' })}${chipNum(T.pot)}</div>` : ''}
     <div class="fmsg ${result ? 'result' : ''}">${msg}</div>
   </div></div>`;
 
@@ -949,7 +971,7 @@ function renderStage() {
     const [x, y] = POS[k] || POS[0];
     const s = T.seats[i];
     if (!s) {
-      const inner = !meSeated && S.me ? `<button class="open" data-sit="${i}" aria-label="Sit in seat ${i + 1}">Sit</button>` : '<div class="open">Open</div>';
+      const inner = !meSeated && S.me ? `<button class="open" data-sit="${i}" aria-label="Sit in seat ${i + 1}">Sit</button>` : '<div class="open" aria-label="Open seat"></div>';
       const bot = T.isHost ? `<button class="textbtn addbot" data-bot="${i}">+ Bot</button>` : '';
       html += `<div class="seat empty" style="left:${x}%;top:${y}%" data-seat="${i}">${inner}${bot}</div>`;
       continue;
@@ -959,23 +981,31 @@ function renderStage() {
     const won = T.phase === 'done' && s.won > 0;
     const shown = !isMe && s.cards.length && s.cards[0] !== null;
     const cls = ['seat', isMe && 'me', turn && 'turn', won && 'won', s.folded && 'folded', (s.sittingOut || !s.connected) && 'away', shown && 'shown'].filter(Boolean).join(' ');
-    const hole = isMe ? '' : s.cards.map(c => cardHTML(c, hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '')).join('');
-    let tag = s.last;
-    if (won) tag = `Won ${fmt(s.won)}`;
+    const hole = isMe ? '' : s.cards.map((c, j) => {
+      const t0 = S.dealAt ? S.dealAt + j * 120 + 60 : 0;
+      const anim = !shown && t0 && performance.now() - t0 < 500;
+      return cardHTML(c, (hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - performance.now())}ms` : '');
+    }).join('');
+    // one short action pill: what they just did, or what happened
+    let tag = s.last, tone = '';
+    if (won) { tag = `Won ${fmt(s.won)}`; tone = 'win'; }
     else if (s.handName && T.phase === 'done') tag = s.handName;
-    else if (turn) tag = isMe ? 'Your turn' : 'Thinking…';
+    else if (turn) tag = '';
     else if (!s.connected) tag = 'Away';
     else if (s.sittingOut && !s.dealt) tag = s.last === 'Busted' ? 'Busted' : 'Sitting out';
+    if (!tone && tag) tone = /^fold/i.test(tag) ? 'fold' : /\ball[ -]?in\b/i.test(tag) ? 'allin' : /^(bet|raise)/i.test(tag) ? 'raise' : '';
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
-      <div class="hole">${hole}</div>
-      <div class="cap">${avatarHTML(s.avatar)}${turn ? '<span class="ring" id="ring"></span>' : ''}${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer">D</span>' : ''}
-        <span class="pl"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></span></div>
-      <div class="tag">${esc(tag || '')}</div>
+      <div class="pod">
+        ${hole ? `<div class="hole">${hole}</div>` : ''}
+        <div class="av">${avatarHTML(s.avatar)}${turn ? '<span class="ring" id="ring"></span>' : ''}${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer">D</span>' : ''}</div>
+        <div class="plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></div>
+        ${tag ? `<span class="act ${tone}">${esc(tag)}</span>` : ''}
+      </div>
       ${T.isHost && s.kind === 'bot' && T.phase !== 'play' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
     if (s.bet > 0) {
-      const bx = x + (50 - x) * 0.4, by = y + (48 - y) * 0.4;
-      html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="chip"></span>${fmt(s.bet)}</div>`;
+      const bx = x + (50 - x) * 0.5, by = y + (48 - y) * 0.5;
+      html += `<div class="bet" style="left:${bx}%;top:${by}%">${chipStack(s.bet, { unit: T.bb, max: 5 })}<span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
   stage.innerHTML = html;
@@ -1004,11 +1034,11 @@ function renderMine(force) {
     return;
   }
 
-  el.className = 'mine' + (myTurn ? ' turn' : '') + (S.raiseOpen ? ' picking' : '');
+  el.className = 'mine' + (myTurn ? ' turn' : '') + (S.raiseOpen ? ' picking' : '') + (me.folded ? ' folded-hand' : '');
   const hi = bestSet(T);
   // deal-in animation for your two cards, once per hand
   const now = performance.now();
-  if (me.cards.length && S.dealHand !== T.handNo) { S.dealHand = T.handNo; S.dealAt = S.skipAnim ? 0 : now + 150; }
+  if (me.cards.length && S.dealHand !== T.handNo) { S.dealHand = T.handNo; S.dealAt = S.skipAnim ? 0 : now + 150; renderStage(); }
   const cards = me.cards.length ? me.cards.map((c, i) => {
     const t0 = S.dealAt ? S.dealAt + i * 120 : 0;
     const anim = t0 && now - t0 < 500;
@@ -1019,31 +1049,34 @@ function renderMine(force) {
   if (inHand) wait = me.allIn ? 'you’re all in' : 'waiting on the table…';
   else if (T.phase === 'waiting') wait = 'waiting for another player';
   const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurn ? '' : wait));
-  let html = `<div class="hrow">
-    ${cards ? `<div class="cards">${cards}</div>` : ''}
-    <div class="info"><span class="hand">${esc(handLine)}</span><span class="num">${money(me.chips)}</span></div>
-    ${myTurn ? '<span class="timer" id="timer"></span>' : ''}
+  let html = `<div class="hero">
+    <div class="mycards">${cards || '<div class="pc empty"></div><div class="pc empty"></div>'}</div>
+    <div class="myinfo"><span class="hand">${esc(handLine)}</span>${chipNum(me.chips, 'mystack')}</div>
+    ${chipStack(me.chips, { unit: T.bb, max: 10, cols: 2, cls: 'my-cstack' })}
   </div>`;
 
   if (myTurn && S.raiseOpen && A.canRaise) {
     html += raisePickerHTML(T, A) + '<div class="turnbar" id="turnbar"></div>';
   } else if (myTurn) {
-    const callLbl = A.canCheck ? 'Check' : (A.toCall >= me.chips ? `All in ${money(A.toCall)}` : `Call ${money(A.toCall)}`);
-    const raiseLbl = A.minTo >= A.maxTo ? `All in ${money(A.maxTo)}` : (A.currentBet === 0 ? 'Bet' : 'Raise');
-    html += `<div class="acts">
-        <button class="btn" id="a-fold" ${A.canCheck ? 'disabled' : ''}>Fold</button>
-        <button class="btn" id="a-call">${callLbl}</button>
-        <button class="btn primary" id="a-raise" ${A.canRaise ? '' : 'disabled'}>${raiseLbl}${A.minTo < A.maxTo ? ' <span class="caret">▴</span>' : ''}</button>
-      </div><div class="turnbar" id="turnbar"></div>`;
+    const allInCall = !A.canCheck && A.toCall >= me.chips;
+    const callTop = A.canCheck ? 'Check' : allInCall ? 'All in' : 'Call';
+    const callSub = A.canCheck ? '' : money(Math.min(A.toCall, me.chips));
+    const raiseTop = A.minTo >= A.maxTo ? 'All in' : (A.currentBet === 0 ? 'Bet' : 'Raise');
+    const raiseSub = A.canRaise ? (A.minTo >= A.maxTo ? money(A.maxTo) : `${money(A.minTo)}+`) : '';
+    html += `<div class="dock"><div class="turnbar" id="turnbar"></div>
+        <button class="act-btn fold" id="a-fold" ${A.canCheck ? 'disabled' : ''}><b>Fold</b></button>
+        <button class="act-btn call" id="a-call"><b>${callTop}</b>${callSub ? `<span>${callSub}</span>` : ''}</button>
+        <button class="act-btn raise" id="a-raise" ${A.canRaise ? '' : 'disabled'}><b>${raiseTop}</b>${raiseSub ? `<span>${raiseSub}</span>` : ''}</button>
+      </div>`;
   } else if (me.chips === 0 && !inHand) {
-    html += `<div class="acts"><button class="btn primary" id="a-rebuy">Add chips</button></div>`;
+    html += `<div class="dock single"><button class="act-btn raise" id="a-rebuy"><b>Add chips</b></button></div>`;
   } else if (me.sittingOut && !inHand) {
-    html += `<div class="acts"><button class="btn primary" id="a-back">I’m back</button></div>`;
+    html += `<div class="dock single"><button class="act-btn raise" id="a-back"><b>I’m back</b></button></div>`;
   }
   el.innerHTML = html;
 
   const on = (id, fn) => { const b = el.querySelector('#' + id); if (b) b.onclick = fn; };
-  const act = (kind, amount) => { buzz(); el.querySelectorAll('.acts .btn, .pk-go').forEach(b => { b.disabled = true; }); send({ t: 'act', kind, amount }); };
+  const act = (kind, amount) => { buzz(); el.querySelectorAll('.act-btn, .pk-go').forEach(b => { b.disabled = true; }); send({ t: 'act', kind, amount }); };
   on('a-fold', () => act('fold'));
   on('a-call', () => act(A.canCheck ? 'check' : 'call'));
   on('a-raise', () => {
