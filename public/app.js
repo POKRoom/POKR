@@ -138,6 +138,10 @@ const S = {
 // the emoji set is only used in the picker for now.
 const TONES = ['#5A3A36', '#5B4A2E', '#2F4A44', '#33405A', '#463A55', '#563945', '#3C4A35', '#46403B'];
 function initials(name) { const w = String(name || '?').trim().split(/\s+/); return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+// At the table everyone is a poker chip with their initials on it.
+function chipAvatar(av, name) {
+  return `<span class="cava" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true"><b>${esc(initials(name))}</b></span>`;
+}
 function avatarHTML(av, name) {
   if (name) return `<span class="ava mono" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true">${esc(initials(name))}</span>`;
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
@@ -492,9 +496,9 @@ function tabPlay() {
   const heroSlide = t => `<article class="hslide">
       <div class="hs-felt"><div class="hs-oval">${ovalSeats(t)}</div>
         <div class="hs-live">${(t.recent && t.recent.length ? t.recent.slice(-2) : [t.players + t.bots ? `${t.players + t.bots} seated · ${t.seats - t.players - t.bots} open` : 'Waiting for players']).map(l => `<span>${esc(l)}</span>`).join('')}
-          <small>${blinds(t.sb, t.bb)}</small></div></div>
+</div></div>
       <h3>${GAME_LONG(t.game)}</h3>
-      <p class="hs-sub">${esc(t.name)} · ${t.seats}-max</p>
+      <p class="hs-sub">${blinds(t.sb, t.bb)} · ${t.seats}-max</p>
       <button class="btn primary hs-go" data-join="${t.code}">Join now</button>
     </article>`;
   const html = `
@@ -517,7 +521,7 @@ function tabPlay() {
       ${!S.lobby ? skelRows(2) : list.length ? `<div class="gscroll">${list.map(t => `
         <button class="gcard" data-join="${t.code}">
           <span class="gc-top"><span class="gc-game"><b>${GAME_SHORT(t.game)}</b><span class="num">${blinds(t.sb, t.bb)}</span></span>${seatRing(t.players + t.bots, t.seats)}</span>
-          <span class="gc-name">${avatarHTML({ c: t.code.charCodeAt(0) % 8 }, t.name)}<span>${esc(t.name)}</span></span>
+          <span class="gc-meta">${t.seats}-max · ${t.players + t.bots ? `${t.players + t.bots} playing` : 'empty'}</span>
         </button>`).join('')}</div>`
         : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No tables match.</p><p class="sub"><button class="linkbtn" id="clear-f">Clear filters</button> or tap + to start one.</p></div>`}
     </section>
@@ -548,7 +552,7 @@ function renderAllTables() {
     ${list.length ? `<div class="gtiles">${list.map(t => `
       <button class="gtile" data-join="${t.code}">
         <span class="gt-row">${seatRing(t.players + t.bots, t.seats)}<span class="gc-game"><b>${GAME_SHORT(t.game)}</b><span class="num">${blinds(t.sb, t.bb)}</span></span></span>
-        <span class="gt-name">${esc(t.name)}</span>
+        <span class="gt-name">${t.seats}-max · ${t.players + t.bots ? `${t.players + t.bots} playing` : 'empty'}</span>
       </button>`).join('')}</div>` : '<div class="empty card-empty"><p>No tables match.</p></div>'}
   </div>`;
   enter();
@@ -1152,12 +1156,14 @@ function renderStage() {
     if (c === undefined && T.board.length >= 3) return cardHTML(null, 'waiting');
     return cardHTML(c === undefined ? undefined : c, cls, anim ? `animation-delay:${Math.round(t0 - now)}ms` : '');
   }).join('');
-  let html = `<div class="rail"><div class="felt">
-    <div class="street">${T.phase === 'play' || T.phase === 'done' ? esc(T.street) + ' · Hand ' + T.handNo : 'Table open'}</div>
-    <div class="board" aria-label="Board">${board}</div>
-    ${T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Pot</span>${chipNum(T.pot)}</div>` : ''}
+  const potPill = T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Total pot</span>${chipNum(T.pot)}</div>` : '<div class="pot ghost" aria-hidden="true"></div>';
+  let html = `<div class="rail"><div class="trim"><div class="felt">
+    <div class="felt-line" aria-hidden="true"></div>
+    <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${blinds(T.sb, T.bb)}${T.seats.length ? ` · ${T.seats.length}-max` : ''}</span></div>
+    ${potPill}
+    <div class="board" aria-label="Board${T.street ? ', ' + esc(T.street) : ''}">${board}</div>
     ${result ? winBanner(T, now0) : `<div class="fmsg">${msg}</div>`}
-  </div></div>`;
+  </div></div></div>`;
 
   for (let i = 0; i < n; i++) {
     const k = (i - base + n) % n;
@@ -1186,30 +1192,38 @@ function renderStage() {
       const anim = !shown && t0 && performance.now() - t0 < 500;
       return cardHTML(c, (hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - performance.now())}ms` : '');
     }).join('');
-    // one short action pill: what they just did, or what happened
-    let tag = s.last, tone = '';
-    if (won) { tag = `Won ${fmt(s.won)}`; tone = 'win'; }
-    else if (s.handName && T.phase === 'done') tag = s.handName;
-    else if (turn) tag = '';
-    else if (!s.connected) tag = 'Away';
-    else if (s.sittingOut && !s.dealt) tag = s.last === 'Busted' ? 'Busted' : 'Sitting out';
-    if (!tone && tag) tone = /^fold/i.test(tag) ? 'fold' : /\ball[ -]?in\b/i.test(tag) ? 'allin' : /^(bet|raise)/i.test(tag) ? 'raise' : '';
+    // What they just did goes in a speech bubble; blinds become SB/BB badges; results sit under the plate.
+    let bubble = '', btone = '', under = '', utone = '', badge = '';
+    const last = s.last || '';
+    if (/^small blind/i.test(last)) badge = 'SB';
+    else if (/^big blind/i.test(last)) badge = 'BB';
+    else if (/^fold/i.test(last) || s.folded) { under = 'Folded'; utone = 'fold'; }
+    else if (last && T.phase === 'play' && !turn) { bubble = last; btone = /\ball[ -]?in\b/i.test(last) ? 'allin' : /^(bet|raise)/i.test(last) ? 'raise' : ''; }
+    if (won) { under = `Won ${fmt(s.won)}`; utone = 'win'; }
+    else if (s.handName && T.phase === 'done' && !s.folded) { under = s.handName; utone = ''; }
+    else if (!s.connected) { under = 'Away'; utone = 'fold'; }
+    else if (s.sittingOut && !s.dealt) { under = last === 'Busted' ? 'Busted' : 'Sitting out'; utone = 'fold'; }
+    const dealerHere = T.dealer === i && T.phase !== 'waiting';
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
-      <div class="np${hole ? ' has-cards' : ''} n${s.cards.length}">
-        ${hole ? `<div class="np-cards">${hole}</div>` : ''}
-        ${tag ? `<span class="np-tag ${tone}">${esc(tag)}</span>` : ''}
-        ${avatarHTML(s.avatar, s.name)}
-        <span class="np-txt"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></span>
-        ${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer" aria-label="Dealer">D</span>' : ''}
-        ${turn ? '<span class="np-timer"><i id="ring"></i></span>' : ''}
+      <div class="sp n${s.cards.length} ${x < 50 ? 'left' : 'right'}">
+        <div class="sp-top">
+          ${hole ? `<div class="sp-cards">${hole}</div>` : ''}
+          ${chipAvatar(s.avatar, s.name)}
+          ${bubble ? `<span class="sp-bubble ${btone}">${esc(bubble)}</span>` : ''}
+          ${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}
+          ${badge ? `<span class="sp-badge b${dealerHere ? ' two' : ''}">${badge}</span>` : ''}
+        </div>
+        <div class="sp-plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer"><i id="ring"></i></span>' : ''}</div>
+        ${under ? `<span class="sp-under ${utone}">${esc(under)}</span>` : ''}
       </div>
-      ${T.isHost && s.kind === 'bot' && T.phase !== 'play' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
+      ${T.isHost && s.kind === 'bot' && T.phase === 'waiting' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
     if (s.bet > 0) {
       const bx = x + (50 - x) * 0.42, by = y + (48 - y) * 0.42;
-      html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bdot"></span><span class="amt">${fmt(s.bet)}</span></div>`;
+      html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bchip" aria-hidden="true"></span><span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
+  stage.className = 'stage n' + n;
   stage.innerHTML = html;
   stage.querySelectorAll('[data-sit]').forEach(b => b.onclick = () => openBuyIn(+b.dataset.sit, false));
   stage.querySelectorAll('[data-bot]').forEach(b => b.onclick = () => send({ t: 'addBot', seat: +b.dataset.bot }));
@@ -1226,7 +1240,7 @@ function winBanner(T, now) {
     : `${nm(ws[0])} ${ws[0].seat === T.you ? 'win' : 'wins'} ${fmt(ws[0].amount)}`;
   const t = S.bannerAt || now;
   const style = now - t < 600 ? ` style="animation-delay:${Math.round(t - now)}ms"` : '';
-  return `<div class="winbanner ${ws.some(w => w.seat === T.you) ? 'mine' : ''} ${now - t < 600 ? 'pop' : ''}"${style} aria-live="polite">
+  return `<div class="winbanner ${ws.some(w => w.seat === T.you) ? 'mywin' : ''} ${now - t < 600 ? 'pop' : ''}"${style} aria-live="polite">
     <span class="wb-hand">${head}</span><span class="wb-who">${sub}</span></div>`;
 }
 
@@ -1238,7 +1252,7 @@ function flyChips(winners) {
   const from = { x: p.left + p.width / 2, y: p.top + p.height / 2 };
   const colors = ['#C9A86A', '#F2F0EC', '#B8322A', '#2A2A2F'];
   winners.forEach((w, wi) => {
-    const seat = document.querySelector(`#stage .seat[data-seat="${w.seat}"] .np`) || document.querySelector(`#stage .seat[data-seat="${w.seat}"]`);
+    const seat = document.querySelector(`#stage .seat[data-seat="${w.seat}"] .sp-plate`) || document.querySelector(`#stage .seat[data-seat="${w.seat}"]`);
     if (!seat) return;
     const r = seat.getBoundingClientRect();
     const to = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
