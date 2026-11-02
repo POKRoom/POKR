@@ -1207,14 +1207,12 @@ function renderStage() {
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
       <div class="sp n${s.cards.length} ${x < 50 ? 'left' : 'right'}">
         <div class="sp-top">
-          ${hole ? `<div class="sp-cards">${hole}</div>` : ''}
+          ${shown ? `<div class="sp-cards">${hole}</div>` : ''}
           ${chipAvatar(s.avatar, s.name)}
-          ${bubble ? `<span class="sp-bubble ${btone}">${esc(bubble)}</span>` : ''}
+          ${turn ? '<span class="sp-ring" id="ring"></span>' : ''}
           ${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}
-          ${badge ? `<span class="sp-badge b${dealerHere ? ' two' : ''}">${badge}</span>` : ''}
         </div>
-        <div class="sp-plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer"><i id="ring"></i></span>' : ''}</div>
-        ${under ? `<span class="sp-under ${utone}">${esc(under)}</span>` : ''}
+        <div class="sp-plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></div>
       </div>
       ${T.isHost && s.kind === 'bot' && T.phase === 'waiting' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
@@ -1240,8 +1238,8 @@ function winBanner(T, now) {
     : `${nm(ws[0])} ${ws[0].seat === T.you ? 'win' : 'wins'} ${fmt(ws[0].amount)}`;
   const t = S.bannerAt || now;
   const style = now - t < 600 ? ` style="animation-delay:${Math.round(t - now)}ms"` : '';
-  return `<div class="winbanner ${ws.some(w => w.seat === T.you) ? 'mywin' : ''} ${now - t < 600 ? 'pop' : ''}"${style} aria-live="polite">
-    <span class="wb-hand">${head}</span><span class="wb-who">${sub}</span></div>`;
+  return `<div class="winbanner ${ws.some(w => w.seat === T.you) ? 'mywin' : ''} ${now - t < 600 ? 'pop' : ''}"${style} aria-live="polite" aria-label="${head}. ${sub.replace(/"/g, '')}">
+    <span class="wb-hand">${head}</span></div>`;
 }
 
 // Chips slide from the pot to each winner's seat, then the seat flashes the amount won.
@@ -1293,7 +1291,7 @@ function renderMine(force) {
   const myTurn = T.phase === 'play' && T.toAct === T.you && A;
   if (!myTurn) S.raiseOpen = false;
   const turnKey = myTurn ? `${T.handNo}:${T.street}:${A.currentBet}:${A.toCall}` : '';
-  if (turnKey && turnKey !== S.lastTurnKey) buzz(15);
+  if (turnKey && turnKey !== S.lastTurnKey) { buzz(15); S.raiseTo = 0; }
   S.lastTurnKey = turnKey;
   const key = JSON.stringify([T.you, T.phase, T.handNo, T.toAct, A, me && [me.chips, me.cards, me.folded, me.sittingOut, me.last, me.bet, me.dealt], T.myHand, S.me && S.me.bankroll, isWide(), S.raiseOpen]);
   if (!force && key === S.actionKey) return;
@@ -1321,24 +1319,24 @@ function renderMine(force) {
   else if (T.phase === 'waiting') wait = 'waiting for another player';
   const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurn ? '' : wait));
   const nHole = me.cards.length || (T.game === 'plo' ? 4 : 2);
-  let html = `<div class="hero">
+  const hero = `<div class="hero">
     <div class="mycards n${nHole}">${cards || '<div class="pc empty"></div>'.repeat(nHole)}</div>
     <div class="myinfo"><span class="hand">${esc(handLine)}</span>${chipNum(me.chips, 'mystack')}</div>
   </div>`;
+  let html = hero;
 
-  if (myTurn && S.raiseOpen && A.canRaise) {
-    html += raisePickerHTML(T, A) + '<div class="turnbar" id="turnbar"></div>';
-  } else if (myTurn) {
+  if (myTurn) {
+    // Two boxes: Fold and Check/Call. To bet or raise, drag the chip tower up: the Call box becomes "Raise to $X".
     const allInCall = !A.canCheck && A.toCall >= me.chips;
     const callTop = A.canCheck ? 'Check' : allInCall ? 'All in' : 'Call';
     const callSub = A.canCheck ? '' : money(Math.min(A.toCall, me.chips));
-    const raiseTop = A.minTo >= A.maxTo ? 'All in' : (A.currentBet === 0 ? 'Bet' : 'Raise');
-    const raiseSub = A.canRaise ? (A.minTo >= A.maxTo ? money(A.maxTo) : `${money(A.minTo)}+`) : '';
-    html += `<div class="dock"><div class="turnbar" id="turnbar"></div>
+    S.callLabel = `<b>${callTop}</b>${callSub ? `<span>${callSub}</span>` : ''}`;
+    html = `<div class="turnwrap ${A.canRaise ? '' : 'noraise'}"><div class="tw-left">${hero}
+      <div class="dock two"><div class="turnbar" id="turnbar"></div>
         <button class="act-btn fold" id="a-fold" ${A.canCheck ? 'disabled' : ''}><b>Fold</b></button>
-        <button class="act-btn call" id="a-call"><b>${callTop}</b>${callSub ? `<span>${callSub}</span>` : ''}</button>
-        <button class="act-btn raise" id="a-raise" ${A.canRaise ? '' : 'disabled'}><b>${raiseTop}</b>${raiseSub ? `<span>${raiseSub}</span>` : ''}</button>
-      </div>`;
+        <button class="act-btn call" id="a-call">${S.callLabel}</button>
+      </div></div>
+      ${A.canRaise ? towerHTML(A) : ''}</div>`;
   } else if (me.chips === 0 && !inHand) {
     html += `<div class="dock single"><button class="act-btn raise" id="a-rebuy"><b>Add chips</b></button></div>`;
   } else if (me.sittingOut && !inHand) {
@@ -1349,15 +1347,60 @@ function renderMine(force) {
   const on = (id, fn) => { const b = el.querySelector('#' + id); if (b) b.onclick = fn; };
   const act = (kind, amount) => { buzz(); el.querySelectorAll('.act-btn, .pk-go').forEach(b => { b.disabled = true; }); send({ t: 'act', kind, amount }); };
   on('a-fold', () => act('fold'));
-  on('a-call', () => act(A.canCheck ? 'check' : 'call'));
-  on('a-raise', () => {
-    if (A.minTo >= A.maxTo) { act('raise', A.maxTo); return; }
-    buzz(5);
-    S.raiseOpen = true; S.raiseTo = A.minTo; renderMine(true);
-  });
+  on('a-call', () => { if (S.raiseTo) act('raise', S.raiseTo); else act(A.canCheck ? 'check' : 'call'); });
   on('a-back', () => send({ t: 'sitout', out: false }));
   on('a-rebuy', () => openBuyIn(T.you, true));
-  if (myTurn && S.raiseOpen) bindRaisePicker(T, A);
+  if (myTurn && A.canRaise) bindTower(T, A);
+}
+
+// The chip tower: the bottom notch is "no raise"; drag up to raise, all the way up for all in (or the pot in PLO).
+const CALL_ZONE = 0.07;
+function towerHTML(A) {
+  return `<div class="tower" id="tower" role="slider" tabindex="0" aria-label="${A.currentBet === 0 ? 'Bet' : 'Raise'} amount" aria-valuemin="0" aria-valuemax="${A.maxTo}">
+    <span class="tw-cap top">${A.potLimit ? 'Pot' : 'All in'}</span>
+    <div class="tw-track"><div class="tw-fill" id="tw-fill"></div><div class="tw-thumb" id="tw-thumb"><i></i><i></i><i></i></div></div>
+    <span class="tw-cap bot">${A.currentBet === 0 ? 'Bet' : 'Raise'}</span>
+  </div>`;
+}
+function bindTower(T, A) {
+  const tw = $('#tower'), track = tw.querySelector('.tw-track');
+  let dragging = false, lastStep = -1;
+  const toValue = t => t < CALL_ZONE ? 0 : (t >= .995 ? A.maxTo : A.minTo + (A.maxTo - A.minTo) * Math.pow((t - CALL_ZONE) / (1 - CALL_ZONE), TOWER_EASE));
+  const fromY = y => {
+    const r = track.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (r.bottom - y) / r.height));
+    setTower(toValue(t));
+    const step = S.raiseTo ? Math.round(S.raiseTo / T.bb) : -1;
+    if (step !== lastStep) { lastStep = step; buzz(2); }
+  };
+  tw.addEventListener('pointerdown', e => { dragging = true; tw.setPointerCapture(e.pointerId); tw.classList.add('drag'); fromY(e.clientY); e.preventDefault(); });
+  tw.addEventListener('pointermove', e => { if (dragging) fromY(e.clientY); });
+  const end = () => { dragging = false; tw.classList.remove('drag'); };
+  tw.addEventListener('pointerup', end); tw.addEventListener('pointercancel', end);
+  tw.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setTower(S.raiseTo ? S.raiseTo + T.bb : A.minTo); e.preventDefault(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setTower(S.raiseTo - T.bb < A.minTo ? 0 : S.raiseTo - T.bb); e.preventDefault(); }
+  });
+  setTower(S.raiseTo || 0);
+}
+function setTower(v) {
+  const T = S.table, A = T && T.actions;
+  if (!A) return;
+  if (v) {
+    v = Math.round(v);
+    if (v < A.maxTo) v = Math.round(v / T.sb) * T.sb;
+    v = Math.max(A.minTo, Math.min(A.maxTo, v));
+  }
+  S.raiseTo = v || 0;
+  const t = !v ? 0 : CALL_ZONE + (1 - CALL_ZONE) * (A.maxTo > A.minTo ? Math.pow((v - A.minTo) / (A.maxTo - A.minTo), 1 / TOWER_EASE) : 1);
+  const tw = $('#tower');
+  if (tw) { tw.style.setProperty('--t', t.toFixed(4)); tw.setAttribute('aria-valuenow', v || 0); tw.setAttribute('aria-valuetext', v ? money(v) : 'No raise'); tw.classList.toggle('max', !!v && v === A.maxTo); tw.classList.toggle('up', !!v); }
+  const b = $('#a-call');
+  if (b) {
+    const allIn = v && v === (A.allIn || A.maxTo);
+    b.classList.toggle('raising', !!v);
+    b.innerHTML = v ? `<b>${allIn ? 'All in' : A.currentBet === 0 ? 'Bet' : 'Raise to'}</b><span>${money(v)}</span>` : S.callLabel;
+  }
 }
 
 // The raise picker: a chip tower you drag up or down, presets beside it, and one confirm button.
