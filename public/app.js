@@ -1139,7 +1139,7 @@ function renderStage() {
     else msg = `Split pot: ${ws.map(w => `${nm(w)} ${fmt(w.amount)}`).join(', ')}`;
   } else if (T.phase === 'play') {
     const a = T.seats[T.toAct];
-    msg = T.toAct === T.you ? 'Your move' : a ? `${esc(a.name)}’s turn` : '';
+    msg = '';
   }
   // flop flips card by card; turn and river flip as they land (timed so re-renders don't restart it)
   const now = performance.now();
@@ -1159,7 +1159,7 @@ function renderStage() {
   const potPill = T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Total pot</span>${chipNum(T.pot)}</div>` : '<div class="pot ghost" aria-hidden="true"></div>';
   let html = `<div class="rail"><div class="trim"><div class="felt">
     <div class="felt-line" aria-hidden="true"></div>
-    <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${blinds(T.sb, T.bb)}${T.seats.length ? ` · ${T.seats.length}-max` : ''}</span></div>
+    <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${blinds(T.sb, T.bb)}</span></div>
     ${potPill}
     <div class="board" aria-label="Board${T.street ? ', ' + esc(T.street) : ''}">${board}</div>
     ${result ? winBanner(T, now0) : `<div class="fmsg">${msg}</div>`}
@@ -1170,6 +1170,7 @@ function renderStage() {
     const [x, y] = seatPos(n, k, wide);
     const s = T.seats[i];
     if (!s) {
+      if (meSeated && !(T.isHost && T.phase === 'waiting')) continue;
       const inner = !meSeated && S.me ? `<button class="open" data-sit="${i}" aria-label="Sit in seat ${i + 1}">Sit</button>` : '<div class="open" aria-label="Open seat"></div>';
       const bot = T.isHost ? `<button class="textbtn addbot" data-bot="${i}">+ Bot</button>` : '';
       html += `<div class="seat empty" style="left:${x}%;top:${y}%" data-seat="${i}">${inner}${bot}</div>`;
@@ -1197,10 +1198,9 @@ function renderStage() {
     const last = s.last || '';
     if (/^small blind/i.test(last)) badge = 'SB';
     else if (/^big blind/i.test(last)) badge = 'BB';
-    else if (/^fold/i.test(last) || s.folded) { under = 'Folded'; utone = 'fold'; }
+    else if (/^fold/i.test(last) || s.folded) { /* dimmed seat says it */ }
     else if (last && T.phase === 'play' && !turn) { bubble = last; btone = /\ball[ -]?in\b/i.test(last) ? 'allin' : /^(bet|raise)/i.test(last) ? 'raise' : ''; }
     if (won) { under = `Won ${fmt(s.won)}`; utone = 'win'; }
-    else if (s.handName && T.phase === 'done' && !s.folded) { under = s.handName; utone = ''; }
     else if (!s.connected) { under = 'Away'; utone = 'fold'; }
     else if (s.sittingOut && !s.dealt) { under = last === 'Busted' ? 'Busted' : 'Sitting out'; utone = 'fold'; }
     const dealerHere = T.dealer === i && T.phase !== 'waiting';

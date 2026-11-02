@@ -12,7 +12,7 @@ const CLUB = { priceCents: 499, period: 'month', name: 'Pro Pass' };
 
 // Table felts: classic green is free; the rest come with Pro Pass.
 const FELTS = [
-  { id: 'green', name: 'Classic Green', felt: '#17463A', deep: '#081D17', club: false },
+  { id: 'green', name: 'Classic Green', felt: '#1F7049', deep: '#0A3220', club: false },
   { id: 'blue', name: 'Midnight Blue', felt: '#1C3B66', deep: '#08142A', club: true },
   { id: 'burgundy', name: 'Burgundy', felt: '#5C1B26', deep: '#21070C', club: true },
   { id: 'graphite', name: 'Graphite', felt: '#2E2F33', deep: '#0F1012', club: true },

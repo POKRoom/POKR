@@ -1533,3 +1533,61 @@ body[data-felt=tan] { --felt: #6E5638; --felt-deep: #2B2013; }
 @media (max-width: 699px) { .felt-mark { top: 77%; } .felt-mark .logo { font-size: clamp(30px, 9.5vw, 44px); } }
 /* big tables on phones: a slightly smaller board so the side seats don't cover it */
 @media (max-width: 699px) { .stage.n8 .board .pc, .stage.n9 .board .pc, .stage.n7 .board .pc { --w: clamp(38px, 11.2vw, 46px); } .stage.n8 .board, .stage.n9 .board, .stage.n7 .board { gap: 4px; } }
+
+/* =====================================================================
+   CLEAN TABLE — a warm wood room, a wooden rail with a tan inner rail,
+   a brighter felt, and almost no text on the table.
+   ===================================================================== */
+:root {
+  --wood-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='0.004 0.09' numOctaves='4' seed='7'/><feColorMatrix values='0 0 0 0 .05  0 0 0 0 .03  0 0 0 0 .01  0 0 0 -1.1 .95'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");
+}
+body[data-felt=green], body:not([data-felt]) { --felt: #1F7049; --felt-deep: #0A3220; }
+/* the room behind the table */
+body:has(.tbl) {
+  background-color: #1B110A;
+  background-image: radial-gradient(120% 90% at 50% 45%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, .7) 100%), var(--wood-grain), linear-gradient(180deg, #2B1B10, #1A100A);
+  background-size: 100% 100%, 600px 600px, 100% 100%; background-repeat: no-repeat, repeat, no-repeat; background-attachment: fixed;
+}
+body:has(.tbl) .tbar, body:has(.tbl) .session { background: none; }
+/* wooden rail, tan inner rail */
+.rail { padding: 12px; background: var(--wood-grain), linear-gradient(160deg, #6A4426, #3C2615 45%, #5A391F 75%, #2E1C0F);
+  background-size: 600px 600px, 100% 100%;
+  box-shadow: inset 0 2px 1px rgba(255, 220, 170, .18), inset 0 -4px 10px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .6), 0 34px 80px rgba(0, 0, 0, .75); }
+@media (min-width: 700px) { .rail { padding: 16px; } }
+.trim { padding: 7px; background: linear-gradient(180deg, #E6D3A3, #C8AE74 50%, #D9C28E); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 -2px 3px rgba(0, 0, 0, .25), 0 0 0 1px rgba(0, 0, 0, .35); }
+@media (max-width: 699px) { .trim { padding: 6px; } }
+.felt { background: var(--grain), radial-gradient(ellipse at 50% 42%, color-mix(in srgb, var(--felt) 88%, #fff 12%), var(--felt) 45%, var(--felt-deep) 100%); background-size: 180px 180px, 100% 100%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35), inset 0 10px 30px rgba(0, 0, 0, .35); }
+.felt-line { inset: 9% 8%; border: 1.5px solid rgba(255, 255, 255, .14); }
+.felt-mark { opacity: .16; gap: 6px; }
+.felt-mark .chip-o { filter: grayscale(1) brightness(1.6); }
+.fm-game { font-size: 13px; padding: 2px 16px; }
+/* pot: a quiet pill */
+.pot { background: rgba(0, 0, 0, .35); border-color: transparent; padding: 4px 18px 5px; }
+.pot .lbl { color: rgba(255, 255, 255, .7); }
+.pot .cv { color: #F3D27A; }
+/* bigger board on phones, like a real deal */
+.board .pc { --w: clamp(48px, 14.2vw, 58px); }
+.board { gap: 5px; }
+.fmsg { color: rgba(255, 255, 255, .7); }
+/* winning hand: gold rules above and below, spaced capitals — no box */
+.winbanner, .winbanner.mywin { background: none; border: 0; box-shadow: none; backdrop-filter: none; padding: 6px 0 0; max-width: 92%; gap: 6px; }
+.winbanner .wb-hand { position: relative; padding: 5px 16px; font-size: 15px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: #F3D27A;
+  border-top: 1.5px solid #E9C766; border-bottom: 1.5px solid #E9C766; text-shadow: 0 2px 8px rgba(0, 0, 0, .55); }
+.winbanner.mywin .wb-hand { color: #FFE39A; box-shadow: 0 0 22px rgba(243, 210, 122, .25); }
+.winbanner .wb-who { color: rgba(255, 255, 255, .85); font-size: 12.5px; font-weight: 500; text-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
+/* lighter seats: no gold outline unless it matters */
+.sp-plate { border-color: rgba(255, 255, 255, .1); background: rgba(10, 8, 6, .88); }
+.sp-plate .nm { background: rgba(255, 255, 255, .04); border-bottom-color: rgba(255, 255, 255, .06); font-weight: 500; color: rgba(255, 255, 255, .85); }
+.sp-plate .ch { color: #F3D27A; }
+.seat.folded .sp-top, .seat.folded .sp-plate { opacity: .4; }
+.bet .amt { font-weight: 600; }
+.seat.empty .open:not(button) { width: 30px; height: 30px; border-color: rgba(255, 255, 255, .14); background: rgba(0, 0, 0, .2); }
+.seat .addbot { font-size: 10.5px; color: rgba(255, 255, 255, .55); }
+/* your hand sits on the felt's edge, bigger, without extra text clutter */
+.mycards .pc { --w: clamp(62px, 17vw, 74px); }
+.mycards .pc + .pc { margin-left: -6px; }
+.myinfo .hand { color: rgba(255, 255, 255, .62); }
+.winbanner, .winbanner.mywin { max-width: min(64%, 300px); }
+.winbanner .wb-hand { font-size: 13.5px; letter-spacing: .16em; padding: 5px 10px; text-align: center; }
+@media (min-width: 700px) { .winbanner .wb-hand { font-size: 16px; letter-spacing: .2em; } }
