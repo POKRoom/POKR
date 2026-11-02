@@ -16,6 +16,9 @@ const ROSTER = [
   { name: 'Juno', style: 'caller', color: 3 },
   { name: 'Ozzie', style: 'aggro', color: 4 },
   { name: 'Pilar', style: 'rock', color: 5 },
+  { name: 'Vera', style: 'loose', color: 6 },
+  { name: 'Lou', style: 'caller', color: 7 },
+  { name: 'Kit', style: 'aggro', color: 2 },
 ];
 
 function decide(t, i) {

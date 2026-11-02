@@ -94,6 +94,16 @@
     },
   };
 
+  // Practice tables so the lobby has something to show: bots only, and a hand starts when you sit.
+  [['The Back Room', 'nlh', '5-10', 9, [1, 3, 5, 7]], ['Pot Limit Lounge', 'plo', '10-25', 6, [1, 2, 4]],
+   ['High Noon', 'nlh', '25-50', 8, [2, 4, 5, 6, 7]], ['Short Stack Club', 'nlh', '10-25', 5, [1, 3]],
+   ['Omaha After Dark', 'plo', '50-100', 7, [1, 3, 4, 6]]].forEach(([name, game, st, n, bots]) => {
+    const code = makeCode();
+    const t = new Table({ code, name, sb: STAKES[st][0], bb: STAKES[st][1], hostId: 'house', isPrivate: false, game, maxSeats: n }, hooks);
+    tables.set(code, t);
+    bots.forEach(i => t.addBot(i));
+  });
+
   const H = {
     hello(c, m) {
       if (db.user) {
@@ -168,9 +178,9 @@
     create(c, m) {
       const st = STAKES[m.stakes] || STAKES['10-25'];
       const code = makeCode();
-      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh' }, hooks);
+      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
       tables.set(code, t);
-      [1, 3, 4].forEach(i => t.addBot(i));
+      const n = t.seats.length; [...new Set([Math.round(n / 4), Math.round(n / 2), Math.round(3 * n / 4)])].forEach(i => t.addBot(i));
       out({ t: 'created', code });
     },
     join(c, m) {

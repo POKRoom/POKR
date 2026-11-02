@@ -249,7 +249,7 @@ const handlers = {
     const stakes = STAKES[m.stakes] || STAKES['10-25'];
     const code = makeCode();
     const name = cleanText(m.name, 28) || `${u.name}'s table`;
-    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh' }, hooks);
+    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
     tables.set(code, t);
     send(c, { t: 'created', code });
     lobbyChanged();

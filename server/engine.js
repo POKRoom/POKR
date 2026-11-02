@@ -20,7 +20,7 @@ class Table {
     this.hostId = opts.hostId;
     this.isPrivate = !!opts.isPrivate;
     this.game = GAMES[opts.game] ? opts.game : 'nlh';
-    this.maxSeats = opts.maxSeats || 6;
+    this.maxSeats = Math.max(2, Math.min(9, Math.floor(opts.maxSeats) || 6));
     this.seats = Array(this.maxSeats).fill(null);
     const k = Number(process.env.TIMING_SCALE) || 1; // tests speed the table up
     this.timing = Object.assign({
@@ -504,7 +504,9 @@ class Table {
       code: this.code, name: this.name, sb: this.sb, bb: this.bb, game: this.game,
       players: this.seats.filter(s => s && s.kind === 'human').length,
       bots: this.seats.filter(s => s && s.kind === 'bot').length,
-      seats: this.seats.length, phase: this.phase,
+      seats: this.seats.length, phase: this.phase, pot: this.phase === 'play' ? this.potTotal() : 0,
+      // a few recent plays for the lobby's live card ("Mae raises to $1.40")
+      recent: this.log.filter(l => !/^(Hand #|Pre-flop|Flop|Turn|River)|joins the table|sits down|leaves the table|reloads/.test(l)).slice(-3),
     };
   }
 }

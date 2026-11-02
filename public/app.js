@@ -222,7 +222,7 @@ function onMessage(m) {
       else if (S.view === 'cashier') renderCashier();
       break;
     }
-    case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social')) renderTabs(); break;
+    case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social')) renderTabs(); else if (S.view === 'alltables') renderAllTables(); break;
     case 'created': nav('/t/' + m.code); joinCode(m.code); break;
     case 'state': {
       const fresh = S.view !== 'table' || !S.table || S.table.code !== m.s.code || !$('#stage');
@@ -423,7 +423,7 @@ const TICON = {
 };
 const suitIcon = i => `<svg viewBox="0 0 24 24" class="suit"><g class="f" fill="currentColor">${SUIT_SVG[i]}</g></svg>`;
 TICON.play = suitIcon(0); TICON.games = suitIcon(1); TICON.social = suitIcon(3); TICON.wallet = suitIcon(2);
-const TABS = [['play', 'Play'], ['games', 'Home games'], ['social', 'Social'], ['wallet', 'Wallet'], ['me', 'Profile']];
+const TABS = [['play', 'Play'], ['games', 'Home games'], ['plus', ''], ['social', 'Social'], ['me', 'Profile']];
 
 function renderTabs() {
   S.view = 'tabs';
@@ -432,15 +432,18 @@ function renderTabs() {
   if (!me) return;
   const same = S.lastTab === S.tab && S.lastPainted === 'tabs';
   const y = same ? window.scrollY : 0;
+  const keepX = ['#hs-track', '.gscroll'].map(q => { const e = document.querySelector(q); return e ? e.scrollLeft : 0; });
   const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
-      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+      ${TABS.map(([k, l]) => k === 'plus' ? `<button class="tab tplus" id="nav-plus" aria-label="Start or join a table"><span>${TICON.plus}</span></button>` : `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
   window.scrollTo(0, y);
   app.querySelectorAll('.tabbar [data-tab]').forEach(b => b.onclick = () => { if (S.tab === b.dataset.tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; } buzz(4); S.tab = b.dataset.tab; renderTabs(); });
+  $('#nav-plus').onclick = () => { buzz(6); openPlusSheet(); };
+  ['#hs-track', '.gscroll'].forEach((q, i) => { const e = document.querySelector(q); if (e && keepX[i]) e.scrollLeft = keepX[i]; });
   if (body.bind) body.bind();
 }
 const renderLobby = renderTabs;
@@ -448,36 +451,122 @@ const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Late nigh
 const largeTitle = (title, right = '', eyebrow = '') => `<header class="lt"><div>${eyebrow ? `<span class="lt-eyebrow">${eyebrow}</span>` : ''}<h1>${title}</h1></div>${right}</header>`;
 const soonRow = (title, sub) => `<div class="lrowbtn static"><div class="lr-txt"><b>${title}</b><span>${sub}</span></div><span class="soon">Soon</span></div>`;
 
+// A ring that fills with the seats taken: "4/9 seats".
+function seatRing(filled, seats) {
+  const r = 15, C = 2 * Math.PI * r, f = seats ? filled / seats : 0;
+  return `<span class="sring" aria-label="${filled} of ${seats} seats taken"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="${r}" class="sr-bg"/><circle cx="18" cy="18" r="${r}" class="sr-fg" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}"/></svg><span class="sr-txt"><b>${filled}/${seats}</b><i>seats</i></span></span>`;
+}
+const GAME_SHORT = g => (g === 'plo' ? 'PLO' : 'NLH');
+const GAME_LONG = g => (g === 'plo' ? 'Pot-Limit Omaha' : 'No-Limit Hold’em');
+function filteredTables() {
+  const L = S.lobby || { tables: [] };
+  S.blindFilter = S.blindFilter || 'all'; S.gameFilter = S.gameFilter || 'all';
+  return (L.tables || []).filter(t =>
+    (S.blindFilter === 'all' || STAKES.some(([k, sb, bb]) => k === S.blindFilter && t.sb === sb && t.bb === bb)) &&
+    (S.gameFilter === 'all' || (t.game || 'nlh') === S.gameFilter) &&
+    (!S.hideFull || t.players + t.bots < t.seats));
+}
+function gameChips() {
+  const bl = S.blindFilter && S.blindFilter !== 'all' ? blindLabel(S.blindFilter) : 'Blinds';
+  return `<div class="filters gchips" role="group" aria-label="Filter tables">
+    ${[['all', 'All'], ['nlh', 'NLH'], ['plo', 'PLO']].map(([k, l]) => `<button type="button" class="fchip" data-gf="${k}" aria-pressed="${S.gameFilter === k}">${l}</button>`).join('')}
+    <button type="button" class="fchip drop ${S.blindFilter !== 'all' ? 'set' : ''}" id="blinds-drop">${bl} <span aria-hidden="true">▾</span></button>
+  </div>`;
+}
+function bindGameChips(rerender) {
+  app.querySelectorAll('[data-gf]').forEach(b => b.onclick = () => { buzz(4); S.gameFilter = b.dataset.gf; rerender(); });
+  const d = $('#blinds-drop');
+  if (d) d.onclick = () => openSheet(`<h2>Blinds</h2><div class="list">${[['all', 'Any blinds'], ...STAKES.map(([k, sb, bb]) => [k, blinds(sb, bb)])].map(([k, l]) => `<button class="lrowbtn" data-bpick="${k}"><div class="lr-txt"><b>${l}</b></div>${S.blindFilter === k ? '<span class="soon">✓</span>' : ''}</button>`).join('')}</div>`, () => {
+    document.querySelectorAll('[data-bpick]').forEach(b => b.onclick = () => { S.blindFilter = b.dataset.bpick; closeModal(); rerender(); });
+  });
+}
 function tabPlay() {
   const me = S.me, L = S.lobby || { tables: [] };
   const seated = Object.entries(me.atTablesBy || {});
-  S.blindFilter = S.blindFilter || 'all';
-  const shown = (L.tables || []).filter(t => S.blindFilter === 'all' || STAKES.some(([k, sb, bb]) => k === S.blindFilter && t.sb === sb && t.bb === bb));
-  const dots = (n, of) => `<span class="dots" aria-label="${n} of ${of} seats taken">${Array.from({ length: of }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
+  const list = filteredTables();
+  const featured = [...(L.tables || [])].filter(t => t.players + t.bots < t.seats).sort((a, b) => (b.players * 3 + b.bots) - (a.players * 3 + a.bots)).slice(0, 5);
+  const ovalSeats = t => Array.from({ length: t.seats }, (_, i) => {
+    const a = Math.PI / 2 + (i / t.seats) * Math.PI * 2;
+    return `<i class="${i < t.players + t.bots ? 'on' : ''}" style="left:${(50 + 44 * Math.cos(a)).toFixed(1)}%;top:${(50 + 40 * Math.sin(a)).toFixed(1)}%"></i>`;
+  }).join('');
+  const heroSlide = t => `<article class="hslide">
+      <div class="hs-felt"><div class="hs-oval">${ovalSeats(t)}</div>
+        <div class="hs-live">${(t.recent && t.recent.length ? t.recent.slice(-2) : [t.players + t.bots ? `${t.players + t.bots} seated · ${t.seats - t.players - t.bots} open` : 'Waiting for players']).map(l => `<span>${esc(l)}</span>`).join('')}
+          <small>${blinds(t.sb, t.bb)}</small></div></div>
+      <h3>${GAME_LONG(t.game)}</h3>
+      <p class="hs-sub">${esc(t.name)} · ${t.seats}-max</p>
+      <button class="btn primary hs-go" data-join="${t.code}">Join now</button>
+    </article>`;
   const html = `
-    ${largeTitle('Play', `<button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${chipNum(me.bankroll)}</button>`, `${greet()}, ${esc(me.name)}`)}
+    <header class="phead">
+      <button class="ph-me" id="to-me" aria-label="Your profile">${avatarHTML(me.avatar, me.name)}</button>
+      <h1>Play</h1>
+      <button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${chipNum(me.bankroll)}<span class="bc-plus" aria-hidden="true">+</span></button>
+    </header>
     ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
+    <section class="hero-tables" aria-label="Featured tables">
+      <div class="hs-track" id="hs-track">${!S.lobby ? '<article class="hslide skel"></article>' : featured.length ? featured.map(heroSlide).join('') : `<article class="hslide empty-hero">
+        <div class="hs-felt"><div class="hs-oval"></div><div class="hs-live"><span>No one’s at a table yet</span></div></div>
+        <h3>Start the first table</h3><p class="hs-sub">Pick a game, send your friends the code</p>
+        <button class="btn primary hs-go" id="hero-new">Start a table</button></article>`}</div>
+      ${featured.length > 1 ? `<div class="hs-dots" id="hs-dots">${featured.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+    </section>
     <section class="sec">
-      <div class="sec-head"><h2>Open tables</h2>${S.lobby ? `<span class="count">${shown.length}</span>` : ''}</div>
-      <div class="filters" role="radiogroup" aria-label="Blinds">
-        ${[['all', 'All blinds'], ...STAKES.map(([k, sb, bb]) => [k, blinds(sb, bb)])].map(([k, l]) => `<button type="button" role="radio" class="fchip ${k === 'all' ? '' : 'num'}" data-bf="${k}" aria-checked="${S.blindFilter === k}">${l}</button>`).join('')}
-      </div>
-      ${!S.lobby ? skelRows(3) : shown.length ? `<div class="cards">${shown.map(t => `
-        <button class="tcard" data-join="${t.code}"><span class="bl num">${blinds(t.sb, t.bb)}<small class="gtag">${t.game === 'plo' ? 'PLO' : 'Hold’em'}</small></span>
-          <span class="tc-mid"><b>${esc(t.name)}</b>${dots(t.players + t.bots, t.seats)}</span>
-          <span class="tc-go">Join</span></button>`).join('')}</div>`
-        : S.blindFilter !== 'all' && L.tables.length ? `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables at ${esc(blindLabel(S.blindFilter))}.</p><p class="sub"><button class="linkbtn" data-bf="all">Show all blinds</button> or start one in Home games.</p></div>`
-        : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables right now.</p><p class="sub">Start one in <button class="linkbtn" id="to-games">Home games</button> and send your friends the code.</p></div>`}
+      <div class="sec-head"><button class="sec-link" id="view-all"><h2>Active games</h2><span aria-hidden="true">›</span></button>${S.lobby ? `<button class="textbtn" id="view-all2">View all</button>` : ''}</div>
+      ${gameChips()}
+      ${!S.lobby ? skelRows(2) : list.length ? `<div class="gscroll">${list.map(t => `
+        <button class="gcard" data-join="${t.code}">
+          <span class="gc-top"><span class="gc-game"><b>${GAME_SHORT(t.game)}</b><span class="num">${blinds(t.sb, t.bb)}</span></span>${seatRing(t.players + t.bots, t.seats)}</span>
+          <span class="gc-name">${avatarHTML({ c: t.code.charCodeAt(0) % 8 }, t.name)}<span>${esc(t.name)}</span></span>
+        </button>`).join('')}</div>`
+        : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No tables match.</p><p class="sub"><button class="linkbtn" id="clear-f">Clear filters</button> or tap + to start one.</p></div>`}
     </section>
     <p class="fine">Play money only for now. No real money.</p>`;
   const bind = () => {
     $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
-    app.querySelectorAll('[data-bf]').forEach(b => b.onclick = () => { buzz(4); S.blindFilter = b.dataset.bf; renderTabs(); });
-    if ($('#to-games')) $('#to-games').onclick = () => { S.tab = 'games'; renderTabs(); };
+    $('#to-me').onclick = () => { S.tab = 'me'; renderTabs(); };
+    bindGameChips(renderTabs);
+    if ($('#clear-f')) $('#clear-f').onclick = () => { S.gameFilter = 'all'; S.blindFilter = 'all'; S.hideFull = false; renderTabs(); };
+    if ($('#hero-new')) $('#hero-new').onclick = openNewTable;
+    ['#view-all', '#view-all2'].forEach(id => { const b = $(id); if (b) b.onclick = renderAllTables; });
     app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
     app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
+    const tr = $('#hs-track'), dots = $('#hs-dots');
+    if (tr && dots) tr.onscroll = () => { const i = Math.round(tr.scrollLeft / tr.clientWidth); dots.querySelectorAll('i').forEach((d, j) => d.classList.toggle('on', i === j)); };
   };
   return { html, bind };
+}
+
+// "View all": every table as a compact tile, with filters.
+function renderAllTables() {
+  S.view = 'alltables';
+  const list = filteredTables();
+  app.innerHTML = `<div class="page">
+    ${pageBar('Active games')}
+    ${gameChips()}
+    <label class="switch hide-full"><input type="checkbox" id="hide-full" ${S.hideFull ? 'checked' : ''}> Hide full tables</label>
+    ${list.length ? `<div class="gtiles">${list.map(t => `
+      <button class="gtile" data-join="${t.code}">
+        <span class="gt-row">${seatRing(t.players + t.bots, t.seats)}<span class="gc-game"><b>${GAME_SHORT(t.game)}</b><span class="num">${blinds(t.sb, t.bb)}</span></span></span>
+        <span class="gt-name">${esc(t.name)}</span>
+      </button>`).join('')}</div>` : '<div class="empty card-empty"><p>No tables match.</p></div>'}
+  </div>`;
+  enter();
+  $('#pg-back').onclick = goLobby;
+  bindGameChips(renderAllTables);
+  $('#hide-full').onchange = e => { S.hideFull = e.target.checked; renderAllTables(); };
+  app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
+}
+
+// The + in the middle of the tab bar.
+function openPlusSheet() {
+  openSheet(`<h2>New game</h2><div class="list">
+    <button class="lrowbtn" id="ps-new">${TICON.plus}<div class="lr-txt"><b>Start a table</b><span>Hold’em or Omaha, 5 to 9 seats</span></div>${TICON.chev}</button>
+    <button class="lrowbtn" id="ps-join">${TICON.key}<div class="lr-txt"><b>Join with code</b><span>Got an invite from a friend?</span></div>${TICON.chev}</button>
+  </div>`, () => {
+    $('#ps-new').onclick = () => { closeModal(); openNewTable(); };
+    $('#ps-join').onclick = () => { closeModal(); openJoinCode(); };
+  });
 }
 
 const blindLabel = k => { const st = STAKES.find(x => x[0] === k); return st ? blinds(st[1], st[2]) : ''; };
@@ -488,6 +577,8 @@ function openNewTable() {
     <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
     <span class="lbl">Game</span>
     <div class="seg2 game-seg" role="radiogroup" aria-label="Game"><button type="button" role="radio" data-game="nlh" aria-checked="${S.game !== 'plo'}">No-Limit Hold’em</button><button type="button" role="radio" data-game="plo" aria-checked="${S.game === 'plo'}">Pot-Limit Omaha</button></div>
+    <span class="lbl">Seats</span>
+    <div class="seatpick" role="radiogroup" aria-label="Table size">${[5, 6, 7, 8, 9].map(n => `<button type="button" role="radio" data-seats="${n}" aria-checked="${(S.seats || 6) === n}"><b>${n}</b><span>${n === 9 ? 'full ring' : n === 6 ? '6-max' : 'seats'}</span></button>`).join('')}</div>
     <span class="lbl">Blinds</span>
     <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
     <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
@@ -497,11 +588,15 @@ function openNewTable() {
       document.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
     });
     $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
+    document.querySelectorAll('[data-seats]').forEach(b => b.onclick = () => {
+      S.seats = +b.dataset.seats; buzz(4);
+      document.querySelectorAll('[data-seats]').forEach(x => x.setAttribute('aria-checked', +x.dataset.seats === S.seats));
+    });
     document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => {
       S.game = b.dataset.game; buzz(4);
       document.querySelectorAll('[data-game]').forEach(x => x.setAttribute('aria-checked', x.dataset.game === S.game));
     });
-    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh' }); };
+    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh', seats: S.seats || 6 }); };
   });
 }
 function openJoinCode() {
@@ -625,6 +720,7 @@ function tabMe() {
       </div>
     </section>
     <div class="list">
+      <button class="lrowbtn" id="p-wallet"><div class="lr-txt"><b>Wallet</b><span>${money(me.bankroll)} · deposit or withdraw</span></div>${TICON.chev}</button>
       <button class="lrowbtn" id="p-club"><div class="lr-txt"><b>Pro Pass & themes</b><span>${me.club && me.club.active ? 'Member · ' : ''}${esc(theme)}</span></div>${TICON.chev}</button>
       <button class="lrowbtn" id="p-edit2"><div class="lr-txt"><b>Name & avatar</b><span>How you show up at the table</span></div>${TICON.chev}</button>
       ${soonRow('Responsible play', 'Budgets, cool-offs and session timers')}
@@ -636,6 +732,7 @@ function tabMe() {
     $('#p-edit').onclick = renderProfileEdit;
     $('#p-edit2').onclick = renderProfileEdit;
     $('#p-club').onclick = () => renderClub();
+    $('#p-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
     $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderTabs(); };
     $('#p-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; S.tab = 'play'; send({ t: 'logout' }); };
   };
@@ -991,17 +1088,40 @@ function bestSet(T) {
   return set;
 }
 
-// Seat spots as % of the stage. Index 0 is always the bottom (you).
-const POS_WIDE = [[50, 91], [10, 69], [10, 28], [50, 7], [90, 28], [90, 69]];
-const POS_TALL = [[50, 93], [15, 68], [15, 28], [50, 5], [85, 28], [85, 68]];
+// Seat spots as % of the stage for any table size. Index 0 is always the bottom (you); the rest
+// go clockwise around the rail, spaced evenly along the oval and kept inside the screen.
+function seatPos(n, k, wide) {
+  const cx = 50, cy = wide ? 49 : 49, rx = wide ? 43 : 37.5, ry = wide ? 42 : 44.5;
+  const a = Math.PI / 2 + (k / n) * Math.PI * 2;  // start at the bottom, go clockwise
+  let x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a);
+  x = Math.max(wide ? 8 : 14, Math.min(wide ? 92 : 86, x));
+  y = Math.max(4, Math.min(94, y));
+  return [x, y];
+}
 
 function renderStage() {
   const T = S.table, stage = $('#stage');
   if (!stage) return;
-  const POS = isWide() ? POS_WIDE : POS_TALL;
+  const wide = isWide();
   const n = T.seats.length, base = T.you >= 0 ? T.you : 0;
   const hi = bestSet(T);
   const meSeated = T.you >= 0;
+  const now0 = performance.now();
+  // Showdown choreography, timed once per hand so re-renders don't restart it:
+  // opponents' cards flip one player at a time, then the banner, then the chips fly to the winner.
+  const revealing = T.seats.map((s, i) => s && i !== T.you && s.cards.length && s.cards[0] !== null ? i : -1).filter(i => i >= 0);
+  if (S.revealHand !== T.handNo) { S.revealHand = T.handNo; S.revealAt = 0; S.revealOrder = []; S.bannerAt = 0; S.flownHand = S.flownHand === T.handNo ? T.handNo : S.flownHand; }
+  if (revealing.length && !S.revealAt) { S.revealAt = S.skipAnim ? now0 - 5000 : now0 + 150; }
+  revealing.forEach(i => { if (!S.revealOrder.includes(i)) S.revealOrder.push(i); });
+  if (T.phase === 'done' && T.result && !S.bannerAt) {
+    const flips = T.result.foldWin ? 0 : S.revealOrder.length;
+    S.bannerAt = S.skipAnim ? now0 - 5000 : Math.max(now0 + 150, (S.revealAt || now0) + flips * 280 + 450);
+    if (S.flownHand !== T.handNo && !S.skipAnim) {
+      S.flownHand = T.handNo;
+      const winners = T.result.winners.map(w => ({ seat: w.seat, amount: w.amount }));
+      setTimeout(() => flyChips(winners), Math.max(0, S.bannerAt - now0 + 350));
+    }
+  }
 
   let msg = '', result = false;
   if (T.phase === 'waiting') {
@@ -1035,13 +1155,13 @@ function renderStage() {
   let html = `<div class="rail"><div class="felt">
     <div class="street">${T.phase === 'play' || T.phase === 'done' ? esc(T.street) + ' · Hand ' + T.handNo : 'Table open'}</div>
     <div class="board" aria-label="Board">${board}</div>
-    ${T.pot ? `<div class="pot"><span class="lbl">Pot</span>${chipNum(T.pot)}</div>` : ''}
-    <div class="fmsg ${result ? 'result' : ''}">${msg}</div>
+    ${T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Pot</span>${chipNum(T.pot)}</div>` : ''}
+    ${result ? winBanner(T, now0) : `<div class="fmsg">${msg}</div>`}
   </div></div>`;
 
   for (let i = 0; i < n; i++) {
     const k = (i - base + n) % n;
-    const [x, y] = POS[k] || POS[0];
+    const [x, y] = seatPos(n, k, wide);
     const s = T.seats[i];
     if (!s) {
       const inner = !meSeated && S.me ? `<button class="open" data-sit="${i}" aria-label="Sit in seat ${i + 1}">Sit</button>` : '<div class="open" aria-label="Open seat"></div>';
@@ -1054,7 +1174,14 @@ function renderStage() {
     const won = T.phase === 'done' && s.won > 0;
     const shown = !isMe && s.cards.length && s.cards[0] !== null;
     const cls = ['seat', isMe && 'me', turn && 'turn', won && 'won', s.folded && 'folded', (s.sittingOut || !s.connected) && 'away', shown && 'shown'].filter(Boolean).join(' ');
+    const order = S.revealOrder.indexOf(i);
+    const flipAt = shown && order >= 0 && S.revealAt ? S.revealAt + order * 280 : 0;
     const hole = isMe ? '' : s.cards.map((c, j) => {
+      if (flipAt) {
+        const t1 = flipAt + j * 70, flipping = now0 - t1 < 700;
+        const keepHi = true;
+        return cardHTML(c, (hi && keepHi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (flipping ? ' flip' : ''), flipping ? `animation-delay:${Math.round(t1 - now0)}ms` : '');
+      }
       const t0 = S.dealAt ? S.dealAt + j * 120 + 60 : 0;
       const anim = !shown && t0 && performance.now() - t0 < 500;
       return cardHTML(c, (hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - performance.now())}ms` : '');
@@ -1087,6 +1214,61 @@ function renderStage() {
   stage.querySelectorAll('[data-sit]').forEach(b => b.onclick = () => openBuyIn(+b.dataset.sit, false));
   stage.querySelectorAll('[data-bot]').forEach(b => b.onclick = () => send({ t: 'addBot', seat: +b.dataset.bot }));
   stage.querySelectorAll('[data-kick]').forEach(b => b.onclick = () => send({ t: 'removeBot', seat: +b.dataset.kick }));
+}
+
+// "Two pair, kings and nines" — big; "Mae takes $3.40" — small. Pops in once the cards are shown.
+function winBanner(T, now) {
+  const ws = T.result.winners;
+  const nm = w => (w.seat === T.you ? 'You' : esc(w.name));
+  const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+  const head = ws.length > 1 ? 'Split pot' : (ws[0].hand ? cap(ws[0].hand) : 'Everyone folded');
+  const sub = ws.length > 1 ? ws.map(w => `${nm(w)} ${fmt(w.amount)}`).join(' · ') + (ws[0].hand ? ` · ${esc(ws[0].hand)}` : '')
+    : `${nm(ws[0])} ${ws[0].seat === T.you ? 'win' : 'wins'} ${fmt(ws[0].amount)}`;
+  const t = S.bannerAt || now;
+  const style = now - t < 600 ? ` style="animation-delay:${Math.round(t - now)}ms"` : '';
+  return `<div class="winbanner ${ws.some(w => w.seat === T.you) ? 'mine' : ''} ${now - t < 600 ? 'pop' : ''}"${style} aria-live="polite">
+    <span class="wb-hand">${head}</span><span class="wb-who">${sub}</span></div>`;
+}
+
+// Chips slide from the pot to each winner's seat, then the seat flashes the amount won.
+function flyChips(winners) {
+  const pot = document.querySelector('#stage .pot');
+  if (!pot || S.view !== 'table') return;
+  const p = pot.getBoundingClientRect();
+  const from = { x: p.left + p.width / 2, y: p.top + p.height / 2 };
+  const colors = ['#C9A86A', '#F2F0EC', '#B8322A', '#2A2A2F'];
+  winners.forEach((w, wi) => {
+    const seat = document.querySelector(`#stage .seat[data-seat="${w.seat}"] .np`) || document.querySelector(`#stage .seat[data-seat="${w.seat}"]`);
+    if (!seat) return;
+    const r = seat.getBoundingClientRect();
+    const to = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    const n = 9;
+    for (let k = 0; k < n; k++) {
+      const c = document.createElement('i');
+      c.className = 'flychip';
+      c.style.setProperty('--c', colors[k % colors.length]);
+      c.style.left = from.x + 'px'; c.style.top = from.y + 'px';
+      document.body.appendChild(c);
+      const jx = (Math.random() - .5) * 26, jy = (Math.random() - .5) * 14;
+      const mid = { x: (from.x + to.x) / 2 + jx * 2, y: Math.min(from.y, to.y) - 30 + jy };
+      const a = c.animate([
+        { transform: `translate(-50%,-50%) translate(${jx}px,${jy}px) scale(.7)`, opacity: 0 },
+        { transform: `translate(-50%,-50%) translate(${jx}px,${jy}px) scale(1)`, opacity: 1, offset: .12 },
+        { transform: `translate(-50%,-50%) translate(${mid.x - from.x}px,${mid.y - from.y}px) scale(1)`, opacity: 1, offset: .55 },
+        { transform: `translate(-50%,-50%) translate(${to.x - from.x}px,${to.y - from.y}px) scale(.6)`, opacity: .2 },
+      ], { duration: 720, delay: wi * 160 + k * 45, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'both' });
+      a.onfinish = () => c.remove();
+    }
+    setTimeout(() => {
+      const plus = document.createElement('span');
+      plus.className = 'wonfloat'; plus.textContent = '+' + money(w.amount);
+      plus.style.left = to.x + 'px'; plus.style.top = (r.top - 4) + 'px';
+      document.body.appendChild(plus);
+      plus.animate([{ transform: 'translate(-50%,0)', opacity: 0 }, { transform: 'translate(-50%,-10px)', opacity: 1, offset: .2 }, { transform: 'translate(-50%,-34px)', opacity: 0 }], { duration: 1500, easing: 'ease-out' }).onfinish = () => plus.remove();
+      seat.animate([{ boxShadow: '0 0 0 0 rgba(201,168,106,0)' }, { boxShadow: '0 0 0 3px rgba(201,168,106,.9), 0 0 30px rgba(201,168,106,.6)' }, { boxShadow: '0 0 0 0 rgba(201,168,106,0)' }], { duration: 900 });
+      buzz(w.seat === (S.table && S.table.you) ? 25 : 6);
+    }, wi * 160 + 9 * 45 + 650);
+  });
 }
 
 function renderMine(force) {
