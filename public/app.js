@@ -142,19 +142,8 @@ function avatarHTML(av, name) {
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
   return `<span class="ava" style="--ac:${COLORS[(av && av.c) || 0]}" aria-hidden="true">${glyph}</span>`;
 }
-// Real-deck layout: corner indexes top-left and bottom-right (upside down), pips for 2-10,
-// one big pip for the ace, a framed court card for J/Q/K.
-const PIPS = {
-  2: [[50, 0], [50, 100, 1]],
-  3: [[50, 0], [50, 50], [50, 100, 1]],
-  4: [[0, 0], [100, 0], [0, 100, 1], [100, 100, 1]],
-  5: [[0, 0], [100, 0], [50, 50], [0, 100, 1], [100, 100, 1]],
-  6: [[0, 0], [100, 0], [0, 50], [100, 50], [0, 100, 1], [100, 100, 1]],
-  7: [[0, 0], [100, 0], [50, 25], [0, 50], [100, 50], [0, 100, 1], [100, 100, 1]],
-  8: [[0, 0], [100, 0], [50, 25], [0, 50], [100, 50], [50, 75, 1], [0, 100, 1], [100, 100, 1]],
-  9: [[0, 0], [100, 0], [0, 33.3], [100, 33.3], [50, 50], [0, 66.7, 1], [100, 66.7, 1], [0, 100, 1], [100, 100, 1]],
-  10: [[0, 0], [100, 0], [50, 16.7], [0, 33.3], [100, 33.3], [0, 66.7, 1], [100, 66.7, 1], [50, 83.3, 1], [0, 100, 1], [100, 100, 1]],
-};
+// Clean white cards (four-color ink): a big rank top-left, a small suit under it, a big suit bottom-right.
+// Easy to read at any size, which matters more than decoration when money is on the line.
 function cardHTML(c, cls = '', style = '') {
   const st = style ? ` style="${style}"` : '';
   if (c === undefined) return `<div class="pc empty ${cls}" aria-hidden="true"></div>`;
@@ -162,12 +151,7 @@ function cardHTML(c, cls = '', style = '') {
   const r = c % 13 + 2, s = Math.floor(c / 13);
   const rt = { 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' }[r] || String(r);
   const suit = `<svg viewBox="0 0 24 24">${SUIT_SVG[s]}</svg>`;
-  const ix = `<span class="r">${rt}</span><span class="s1">${suit}</span>`;
-  let mid;
-  if (r <= 10) mid = `<span class="pips">${PIPS[r].map(([x, y, f]) => `<i style="left:${x}%;top:${y}%"${f ? ' class="f"' : ''}>${suit}</i>`).join('')}</span>`;
-  else if (r === 14) mid = `<span class="ace">${suit}</span>`;
-  else mid = `<span class="court"><span class="ct-s a">${suit}</span><b>${rt}</b><span class="ct-s b">${suit}</span></span>`;
-  return `<div class="pc face s${s} ${s === 1 ? 'red' : s === 2 ? 'red diam' : ''} r${rt} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="ix">${ix}</span><span class="ix ix2">${ix}</span>${mid}<span class="s2">${suit}</span></div>`;
+  return `<div class="pc face s${s} r${rt} ${cls}"${st} role="img" aria-label="${rt} of ${SUIT_NAME[s]}"><span class="cr">${rt}</span><span class="cs">${suit}</span><span class="cb">${suit}</span></div>`;
 }
 // toast with an optional fix-it action: toast('Not enough money', ['Cashier', () => renderCashier('deposit')])
 function toast(text, action) {
@@ -1059,7 +1043,7 @@ function renderStage() {
       ${T.isHost && s.kind === 'bot' && T.phase !== 'play' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
     if (s.bet > 0) {
-      const bx = x + (50 - x) * 0.5, by = y + (48 - y) * 0.5;
+      const bx = x + (50 - x) * 0.36, by = y + (48 - y) * 0.36;
       html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bdot"></span><span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
