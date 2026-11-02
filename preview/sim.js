@@ -5,6 +5,7 @@
   const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
   const { money } = require('./cards');
   const shop = require('./shop');
+  const { createManager } = require('./tourneys');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
   const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
   const BANTER = {
@@ -104,7 +105,51 @@
     bots.forEach(i => t.addBot(i));
   });
 
+  // ---------- tournaments (same manager as the real server; bots fill the field) ----------
+  let tourTimer = null;
+  const tm = createManager({
+    Table, tables, makeCode, preview: true,
+    broadcast: t => hooks.onChange(t),
+    charge(userId, cents) { const u = db.user; if (!u) return 'Sign in first'; if (u.bankroll < cents) return 'Not enough in your balance for that buy-in'; u.bankroll -= cents; persist(); sendMe(); return null; },
+    credit(userId, cents) { const u = db.user; if (!u || !cents) return; u.bankroll += cents; persist(); sendMe(); },
+    userInfo() { return { name: db.user.name, avatar: db.user.avatar }; },
+    notify(userId, msg) { out(msg); },
+    moveClient(userId, code) {
+      if (!client) return;
+      if (!(client.code && tm.byTable.has(client.code)) && !client.followTourney) return;
+      const t = tables.get(code);
+      client.code = code;
+      out({ t: 'moved', code });
+      if (t) { out({ t: 'chat', items: t.chat, reset: true }); out({ t: 'state', s: t.view(db.user.id) }); }
+    },
+    changed(tour) {
+      if (tourTimer) return;
+      tourTimer = setTimeout(() => {
+        tourTimer = null;
+        if (!client || !db.user) return;
+        if (!client.code) out({ t: 'tourneys', list: tm.list(db.user.id) });
+        if (client.tview) { const d = tm.detail(client.tview, db.user.id); if (d) out({ t: 'tourney', d }); }
+      }, 800);
+    },
+  });
+  setInterval(() => tm.tick(), 1000);
+  const isTourneyTable = t => !!(t && t.tourney);
+
   const H = {
+    tourneys() { out({ t: 'tourneys', list: tm.list(db.user.id) }); },
+    tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, db.user.id); if (!d) return out({ t: 'error', message: 'That tournament doesn’t exist' }); out({ t: 'tourney', d }); },
+    tUnwatch(c) { c.tview = null; },
+    tReg(c, m) { const e = tm.register(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); c.followTourney = true; out({ t: 'notice', message: 'You’re registered' }); tm.tours.get(m.id) && tm.tours.get(m.id)._changed(); },
+    tUnreg(c, m) { const e = tm.unregister(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); out({ t: 'notice', message: 'Unregistered. Your buy-in is back in your balance.' }); },
+    tHost(c, m) { const t = tm.host(db.user.id, m); c.tview = t.id; out({ t: 'tourneyHosted', id: t.id }); out({ t: 'tourney', d: t.detail(db.user.id) }); },
+    tStart(c, m) { const e = tm.start(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); },
+    tBots(c, m) { const e = tm.addBots(db.user.id, m.id, Number(m.n)); if (e) return out({ t: 'error', message: e }); },
+    tSeat(c, m) {
+      const code = tm.myTable(db.user.id, m.id);
+      if (!code) return out({ t: 'error', message: 'You don’t have a seat in that tournament right now' });
+      c.followTourney = true;
+      H.join(c, { code });
+    },
     hello(c, m) {
       if (db.user) {
         // chips left at tables from a previous visit come back
@@ -112,7 +157,7 @@
         db.user.bankroll += left; db.user.atTables = {}; persist();
       }
       if (!db.user || db.token !== m.token) return out({ t: 'needProfile' });
-      sendMe(); sendCatalog();
+      sendMe(); sendCatalog(); out({ t: 'tourneys', list: tm.list(db.user.id) });
     },
     // Preview accounts live only in this browser; the real server hashes passwords and checks them properly.
     signup(c, m) {
@@ -155,7 +200,7 @@
       persist();
       sendMe();
     },
-    lobby() { out(lobby()); },
+    lobby() { out(lobby()); out({ t: 'tourneys', list: tm.list(db.user.id) }); },
     club(c, m) {
       const r = shop.club(db.user, m.action); if (r.error) return out({ t: 'error', message: r.error });
       if (r.resetAvatar) for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
@@ -188,12 +233,19 @@
       if (!t) return out({ t: 'notFound', code: m.code });
       c.code = t.code;
       out({ t: 'chat', items: t.chat, reset: true });
+      if (t.seatOf(db.user.id) >= 0) t.setConnected(db.user.id, true);
       out({ t: 'state', s: t.view(db.user.id) });
-      if (!t.chat.length) botSay(t, 3, 'gl all', 1200);
+      if (!t.chat.length && !isTourneyTable(t)) botSay(t, 3, 'gl all', 1200);
     },
-    leave(c, m) { const t = tables.get(c.code); if (t && !(m && m.keepSeat)) t.stand(db.user.id); c.code = null; if (!(m && m.keepSeat)) out(lobby()); },
+    leave(c, m) {
+      const t = tables.get(c.code);
+      if (isTourneyTable(t)) { c.followTourney = false; t.setConnected(db.user.id, false); }
+      else if (t && !(m && m.keepSeat)) t.stand(db.user.id);
+      c.code = null; if (!(m && m.keepSeat)) { out(lobby()); out({ t: 'tourneys', list: tm.list(db.user.id) }); }
+    },
     sit(c, m) {
       const t = tables.get(c.code), u = db.user;
+      if (isTourneyTable(t)) return out({ t: 'error', message: 'Register for the tournament to get a seat' });
       const buyIn = Math.floor(Number(m.buyIn));
       if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return out({ t: 'error', message: `Buy in between ${money(t.buyInMin)} and ${money(t.buyInMax)}` });
       if (buyIn > u.bankroll) return out({ t: 'error', message: 'You don’t have that many chips in your bankroll' });
@@ -201,9 +253,10 @@
       if (err) return out({ t: 'error', message: err });
       u.bankroll -= buyIn; u.atTables[t.code] = buyIn; persist(); sendMe();
     },
-    stand(c) { const t = tables.get(c.code); if (t) t.stand(db.user.id); },
+    stand(c) { const t = tables.get(c.code); if (t && !isTourneyTable(t)) t.stand(db.user.id); },
     rebuy(c, m) {
       const t = tables.get(c.code), u = db.user, i = t.seatOf(u.id);
+      if (isTourneyTable(t)) return out({ t: 'error', message: 'No rebuys in this tournament' });
       if (i < 0) return;
       const room = t.buyInMax - t.seats[i].chips;
       const amt = Math.min(Math.floor(Number(m.amount)) || 0, room, u.bankroll);

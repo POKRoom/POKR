@@ -45,6 +45,8 @@ ${mod('cards', 'server/cards.js')}
 ${mod('bots', 'server/bots.js')}
 ${mod('engine', 'server/engine.js')}
 ${mod('shop', 'server/shop.js')}
+${mod('tournament', 'server/tournament.js')}
+${mod('tourneys', 'server/tourneys.js')}
 ${read('preview/sim.js')}
 </script>
 <script>

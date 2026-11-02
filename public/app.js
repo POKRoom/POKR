@@ -96,11 +96,13 @@ const LOGO = 'p<span class="chip-o" aria-hidden="true"></span>kr';
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // all amounts are whole cents; show them as dollars
 const money = c => { const d = (c || 0) / 100; return '$' + d.toLocaleString('en-US', Number.isInteger(d) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-const fmt = money;
+const inTourneyTable = () => S.view === 'table' && S.table && !!S.table.tourney;
+const fmt = c => (inTourneyTable() ? Number(c || 0).toLocaleString('en-US') : money(c));
 const signedMoney = n => (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n));
 const signed = signedMoney;
 // Big numbers styled like chip values: a chip, a small $, bold dollars, small cents.
 function chipNum(c, cls = '') {
+  if (inTourneyTable()) return `<span class="cv ${cls}">${Number(c || 0).toLocaleString('en-US')}</span>`;
   const neg = (c || 0) < 0, d = Math.abs(c || 0) / 100;
   const [w, f] = d.toFixed(2).split('.');
   const whole = Number(w).toLocaleString('en-US');
@@ -211,6 +213,11 @@ function onMessage(m) {
     case 'authError': showAuthError(m.message); break;
     case 'catalog': S.catalog = m.catalog; break;
     case 'notice': toast(m.message); break;
+    case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'play') renderTabs(); break;
+    case 'tourney': if (!S.tourView || m.d.id === S.tourView) { S.tour = m.d; if (S.view === 'tourney') renderTourney(m.d.id, true); } break;
+    case 'tourneyHosted': renderTourney(m.id); break;
+    case 'moved': { const T = S.table; nav('/t/' + m.code); toast(T && T.code !== m.code ? 'You’ve been moved to a new table' : 'Your seat is ready'); break; }
+    case 'tourneyResult': showTourneyResult(m); break;
     case 'token': S.token = m.token; store.set('pokr.token', m.token); store.set('pokr.hadAccount', '1'); break;
     case 'me': {
       const entering = S.view === 'boot' || S.view === 'auth';
@@ -235,7 +242,7 @@ function onMessage(m) {
       renderTable();
       break;
     }
-    case 'notFound': toast('That table is closed or the code is wrong'); nav('/', true); goLobby(); break;
+    case 'notFound': if (/^[A-Z0-9]{5}$/i.test(m.code || '') && S.triedTour !== m.code) { S.triedTour = m.code; nav('/', true); renderTourney(String(m.code).toUpperCase()); break; } toast('That table is closed or the code is wrong'); nav('/', true); goLobby(); break;
     case 'chat':
       if (m.reset) S.chat = [];
       S.chat.push(...m.items);
@@ -244,7 +251,7 @@ function onMessage(m) {
       renderFeed();
       break;
     case 'react': showReaction(m); break;
-    case 'error': toast(m.message, errorAction(m.message)); break;
+    case 'error': if (S.view === 'tourney' && !S.tour) { toast('That code doesn’t match a table or tournament'); S.tourView = null; goLobby(); break; } toast(m.message, errorAction(m.message)); break;
   }
 }
 
@@ -455,6 +462,149 @@ const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Late nigh
 const largeTitle = (title, right = '', eyebrow = '') => `<header class="lt"><div>${eyebrow ? `<span class="lt-eyebrow">${eyebrow}</span>` : ''}<h1>${title}</h1></div>${right}</header>`;
 const soonRow = (title, sub) => `<div class="lrowbtn static"><div class="lr-txt"><b>${title}</b><span>${sub}</span></div><span class="soon">Soon</span></div>`;
 
+/* ---------------- tournaments ---------------- */
+const clock = ms => { ms = Math.max(0, ms || 0); const s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+const chips = n => Number(n || 0).toLocaleString('en-US');
+const whenLocal = ts => { const d = new Date(ts), today = new Date(); const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); return d.toDateString() === today.toDateString() ? t : `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${t}`; };
+function tourStatus(t) {
+  if (t.status === 'registering') return t.startsAt ? (t.startsAt - Date.now() < 3600000 ? `Starts in <span data-cd="${t.startsAt}">${clock(t.startsAt - Date.now())}</span>` : `Starts ${whenLocal(t.startsAt)}`) : 'Waiting for the host';
+  if (t.status === 'running') return `${t.lateReg ? 'Late reg open · ' : ''}Level ${t.level} · ${t.left} left`;
+  if (t.status === 'finished') return 'Finished';
+  return 'Canceled';
+}
+function tourMine(t) {
+  const me = t.me;
+  if (!me) return '';
+  if (me.status === 'registered') return '<span class="tmine">Registered</span>';
+  if (me.status === 'playing') return '<span class="tmine live">Playing</span>';
+  if (me.status === 'won') return '<span class="tmine win">You won</span>';
+  if (me.status === 'busted') return `<span class="tmine">${ordinal(me.place)}${me.prize ? ' · ' + money(me.prize) : ''}</span>`;
+  return '';
+}
+function tourneysSection() {
+  const list = (S.tourneys || []).filter(t => t.status !== 'canceled');
+  if (!list.length) return '';
+  return `<section class="sec">
+    <div class="sec-head"><h2 class="sec-title">Tournaments</h2><button class="textbtn" id="host-t">Host one</button></div>
+    <div class="tscroll">${list.map(t => `
+      <button class="tcard2 ${t.series === 'main' ? 'main' : ''} ${t.status}" data-tour="${t.id}">
+        <span class="tc2-top"><span class="tc2-series">${t.series ? 'Pokr Championship Series' : t.hosted ? 'Hosted' : 'Tournament'}</span>${tourMine(t)}</span>
+        <b class="tc2-name">${esc(t.name)}</b>
+        <span class="tc2-status">${tourStatus(t)}</span>
+        <span class="tc2-row"><span><i>Buy-in</i>${t.buyIn ? money(t.buyIn) : 'Free'}</span><span><i>Prize pool</i>${money(t.prizePool)}${t.guarantee && t.prizePool <= t.guarantee ? ' GTD' : ''}</span><span><i>${t.status === 'running' ? 'Entries' : 'In'}</i>${t.status === 'running' ? t.entries : t.registered}</span></span>
+        <span class="tc2-tags"><span>${GAME_SHORT(t.game)}</span><span>${t.speedName}</span><span>${t.seatsPerTable}-max</span>${t.reentries ? '<span>Re-entry</span>' : ''}</span>
+      </button>`).join('')}</div>
+  </section>`;
+}
+function bindTourneysSection() {
+  app.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
+  const h = $('#host-t'); if (h) h.onclick = openHostTourney;
+}
+
+// One tournament: the clock, your status and button, then players, payouts, structure and tables.
+function renderTourney(id, refresh) {
+  if (!refresh) { S.tourView = id; S.tourTab = S.tourTab || 'players'; if (!S.tour || S.tour.id !== id) S.tour = null; send({ t: 'tourney', id }); }
+  S.view = 'tourney';
+  const d = S.tour && S.tour.id === id ? S.tour : null;
+  const y = refresh ? window.scrollY : 0;
+  if (!d) { app.innerHTML = `<div class="page">${pageBar('Tournament')}${skelRows(4)}</div>`; $('#pg-back').onclick = closeTourney; return; }
+  const me = d.me, tab = S.tourTab;
+  let cta = '';
+  if (d.isHost && d.status === 'registering') cta = `<div class="t-host"><button class="btn primary" id="t-start" ${d.registered < 2 ? 'disabled' : ''}>Start now · ${d.registered} in</button><button class="btn" id="t-bots">Add 5 bots</button><button class="btn" id="t-share">Share code ${esc(d.id)}</button></div>`;
+  if (me && me.status === 'playing') cta = `<button class="btn primary big" id="t-seat">Take your seat</button>` + cta;
+  else if (me && me.status === 'registered') cta = `<div class="t-in"><span>You’re in. ${d.startsAt ? 'We’ll seat you when it starts.' : 'Waiting for the host to start.'}</span><button class="textbtn" id="t-unreg">Unregister</button></div>` + cta;
+  else if (me && (me.status === 'busted' || me.status === 'won')) cta = `<div class="t-in done"><span>${me.status === 'won' ? 'You won it' : `You finished ${ordinal(me.place)}`}${me.prize ? ` · ${money(me.prize)}` : ''}</span>${me.canEnter ? `<button class="btn primary" id="t-reg">Re-enter · ${money(d.buyIn)}</button>` : ''}</div>` + cta;
+  else if (d.lateReg) cta = `<button class="btn primary big" id="t-reg">${d.status === 'running' ? 'Late register' : 'Register'} · ${d.buyIn ? money(d.buyIn) : 'Free'}</button>` + cta;
+  else if (d.status === 'running') cta = `<p class="fine">Registration is closed.</p>` + cta;
+  const cur = d.level;
+  const tabs = [['players', d.status === 'registering' ? `Players (${d.registered})` : 'Players'], ['payouts', 'Payouts'], ['structure', 'Structure'], ['tables', 'Tables']];
+  let body = '';
+  if (tab === 'players') {
+    if (d.status === 'registering') body = d.field.length ? `<div class="tlist">${d.field.map(p => `<div class="trow">${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}</span></div>`).join('')}</div>` : '<p class="wait">Nobody’s registered yet.</p>';
+    else body = `<div class="tlist">${d.standings.map(p => `<div class="trow ${p.me ? 'me' : ''}"><span class="tr-rk">${p.rank}</span>${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}</span><span class="tc">${chips(p.chips)}</span><span class="tt">T${p.table}</span></div>`).join('')}
+      ${d.results.length ? `<h3 class="tsub">Finished</h3>${d.results.map(r => `<div class="trow out"><span class="tr-rk">${ordinal(r.place)}</span><span class="tn">${esc(r.name)}</span><span class="tc">${r.prize ? money(r.prize) : ''}</span></div>`).join('')}` : ''}</div>`;
+  } else if (tab === 'payouts') {
+    body = d.payouts.length ? `<p class="wait">${d.payouts.length} paid of ${d.entries} entries${d.status !== 'finished' && d.lateReg ? ' so far' : ''}.</p><div class="tlist">${d.payouts.map(x => `<div class="trow"><span class="tr-rk">${ordinal(x.place)}</span><span class="tn"></span><span class="tc gold">${money(x.amount)}</span></div>`).join('')}</div>` : '<p class="wait">Payouts appear once there are at least two entries.</p>';
+  } else if (tab === 'structure') {
+    body = `<div class="tlist">${d.structure.map(l => `<div class="trow lv ${l.level === cur && d.status === 'running' ? 'now' : ''}"><span class="tr-rk">${l.level}</span><span class="tn">${chips(l.sb)} / ${chips(l.bb)}</span><span class="tc">ante ${chips(l.ante)}</span>${l.level === d.lateRegLevels && d.lateRegLevels ? '<span class="tt">late reg ends</span>' : ''}</div>`).join('')}</div>`;
+  } else {
+    body = d.tables.length ? `<div class="tlist">${d.tables.map(t => `<button class="trow tb" data-watch="${t.code}"><span class="tr-rk">T${t.no}</span><span class="tn">${t.players} players</span><span class="tc">Big stack ${chips(t.big)}</span><span class="tt">Watch ›</span></button>`).join('')}</div>` : '<p class="wait">Tables appear when it starts.</p>';
+  }
+  app.innerHTML = `<div class="page tpage">
+    ${pageBar(d.series ? 'Pokr Championship Series' : 'Tournament')}
+    <section class="thero ${d.series === 'main' ? 'main' : ''}">
+      <span class="lbl">${GAME_LONG(d.game)} · ${d.speedName} · ${d.seatsPerTable}-max</span>
+      <h1>${esc(d.name)}</h1>
+      <div class="th-status">${d.status === 'running' ? `<b>Level ${d.level}</b> ${chips(d.sb)}/${chips(d.bb)} · ante ${chips(d.ante)} · next in <span data-cd="${Date.now() + d.nextLevelMs}">${clock(d.nextLevelMs)}</span>` : tourStatus(d)}</div>
+      <div class="th-pool"><i>Prize pool</i><b>${money(d.prizePool)}</b>${d.guarantee ? `<span>${money(d.guarantee)} guaranteed</span>` : ''}</div>
+      <div class="th-grid">
+        <span><i>Buy-in</i>${d.buyIn ? money(d.buyIn) : 'Free'}</span>
+        <span><i>Starting stack</i>${chips(d.stack)}</span>
+        <span><i>Levels</i>${d.levelMin} min</span>
+        <span><i>${d.status === 'running' ? 'Left' : 'Registered'}</i>${d.status === 'running' ? `${d.left}/${d.entries}` : d.registered}</span>
+        <span><i>Late reg</i>${d.lateRegLevels ? `Until level ${d.lateRegLevels}` : 'None'}</span>
+        <span><i>Re-entry</i>${d.reentries ? `${d.reentries}×` : 'Freezeout'}</span>
+      </div>
+      ${cta}
+    </section>
+    <div class="seg4" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-ttab="${k}" aria-selected="${tab === k}">${l}</button>`).join('')}</div>
+    ${body}
+  </div>`;
+  if (!refresh) enter();
+  window.scrollTo(0, y);
+  $('#pg-back').onclick = closeTourney;
+  app.querySelectorAll('[data-ttab]').forEach(b => b.onclick = () => { S.tourTab = b.dataset.ttab; renderTourney(id, true); });
+  const on = (sel, fn) => { const e = $(sel); if (e) e.onclick = fn; };
+  on('#t-reg', () => { buzz(8); send({ t: 'tReg', id }); });
+  on('#t-unreg', () => send({ t: 'tUnreg', id }));
+  on('#t-seat', () => send({ t: 'tSeat', id }));
+  on('#t-start', () => { buzz(10); send({ t: 'tStart', id }); });
+  on('#t-bots', () => send({ t: 'tBots', id, n: 5 }));
+  on('#t-share', async () => { if (await copy(d.id)) toast(`Code ${d.id} copied. Friends join with + → Join with code.`); });
+  app.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.watch); joinCode(b.dataset.watch); });
+}
+function closeTourney() { send({ t: 'tUnwatch' }); S.tourView = null; S.tour = null; goLobby(); }
+
+function openHostTourney() {
+  closeModal();
+  S.ht = S.ht || { game: 'nlh', buyIn: 1000, speed: 'turbo', seats: 9, lateReg: true, reentry: false };
+  const H = S.ht;
+  const opt = (key, val, label, sub) => `<button type="button" class="hopt" data-hk="${key}" data-hv="${val}" aria-pressed="${String(H[key]) === String(val)}"><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</button>`;
+  openSheet(`<h2>Host a tournament</h2>
+    <input id="ht-name" maxlength="30" placeholder="${esc(S.me.name)}'s tournament" aria-label="Tournament name">
+    <span class="lbl">Game</span><div class="hrow2">${opt('game', 'nlh', 'Hold’em')}${opt('game', 'plo', 'Omaha')}</div>
+    <span class="lbl">Buy-in</span><div class="hrow6">${[[0, 'Free'], [500, '$5'], [1000, '$10'], [2500, '$25'], [5000, '$50'], [10000, '$100']].map(([v, l]) => opt('buyIn', v, l)).join('')}</div>
+    <span class="lbl">Speed</span><div class="hrow4">${opt('speed', 'hyper', 'Hyper', '2 min')}${opt('speed', 'turbo', 'Turbo', '4 min')}${opt('speed', 'regular', 'Regular', '8 min')}${opt('speed', 'deep', 'Deep', '12 min')}</div>
+    <span class="lbl">Players per table</span><div class="hrow4">${[6, 7, 8, 9].map(n => opt('seats', n, n)).join('')}</div>
+    <label class="switch"><input type="checkbox" id="ht-late" ${H.lateReg ? 'checked' : ''}> Late registration for the first 4 levels</label>
+    <label class="switch"><input type="checkbox" id="ht-re" ${H.reentry ? 'checked' : ''}> One re-entry</label>
+    <button class="btn primary" id="ht-go">Create tournament</button>
+    <p class="fine">You start it when everyone’s in. Friends join with the code.</p>`, () => {
+    document.querySelectorAll('.hopt').forEach(b => b.onclick = () => {
+      const k = b.dataset.hk; H[k] = isNaN(+b.dataset.hv) ? b.dataset.hv : +b.dataset.hv; buzz(4);
+      document.querySelectorAll(`.hopt[data-hk="${k}"]`).forEach(x => x.setAttribute('aria-pressed', String(H[k]) === x.dataset.hv));
+    });
+    $('#ht-late').onchange = e => { H.lateReg = e.target.checked; };
+    $('#ht-re').onchange = e => { H.reentry = e.target.checked; };
+    $('#ht-go').onclick = () => { const name = $('#ht-name').value; closeModal(); send({ t: 'tHost', name, ...H }); };
+  });
+}
+
+function showTourneyResult(m) {
+  buzz(m.won ? [30, 60, 30] : 20);
+  const head = m.won ? `You won the ${esc(m.name)}` : `You finished ${ordinal(m.place)} of ${m.entries}`;
+  openModal(`<div class="tresult ${m.won ? 'won' : ''}">
+    <span class="lbl">${esc(m.name)}</span>
+    <h2>${head}</h2>
+    ${m.prize ? `<div class="tr-prize">+${money(m.prize)}</div><p class="wait">Added to your balance.</p>` : '<p class="wait">Out before the money this time.</p>'}
+    <div class="acts">${m.canReenter ? `<button class="btn primary" id="tr-re">Re-enter · ${money(m.buyIn)}</button>` : ''}<button class="btn" id="tr-lobby">Tournament lobby</button></div>
+  </div>`, () => {
+    const re = $('#tr-re'); if (re) re.onclick = () => { closeModal(); send({ t: 'tReg', id: m.id }); };
+    $('#tr-lobby').onclick = () => { closeModal(); leaveTableView(); renderTourney(m.id); };
+  });
+}
+
 // A ring that fills with the seats taken: "4/9 seats".
 function seatRing(filled, seats) {
   const r = 15, C = 2 * Math.PI * r, f = seats ? filled / seats : 0;
@@ -515,6 +665,7 @@ function tabPlay() {
         <button class="btn primary hs-go" id="hero-new">Start a table</button></article>`}</div>
       ${featured.length > 1 ? `<div class="hs-dots" id="hs-dots">${featured.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
     </section>
+    ${tourneysSection()}
     <section class="sec">
       <div class="sec-head"><button class="sec-link" id="view-all"><h2>Active games</h2><span aria-hidden="true">›</span></button>${S.lobby ? `<button class="textbtn" id="view-all2">View all</button>` : ''}</div>
       ${gameChips()}
@@ -530,6 +681,7 @@ function tabPlay() {
     $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
     $('#to-me').onclick = () => { S.tab = 'me'; renderTabs(); };
     bindGameChips(renderTabs);
+    bindTourneysSection();
     if ($('#clear-f')) $('#clear-f').onclick = () => { S.gameFilter = 'all'; S.blindFilter = 'all'; S.hideFull = false; renderTabs(); };
     if ($('#hero-new')) $('#hero-new').onclick = openNewTable;
     ['#view-all', '#view-all2'].forEach(id => { const b = $(id); if (b) b.onclick = renderAllTables; });
@@ -566,10 +718,12 @@ function renderAllTables() {
 function openPlusSheet() {
   openSheet(`<h2>New game</h2><div class="list">
     <button class="lrowbtn" id="ps-new">${TICON.plus}<div class="lr-txt"><b>Start a table</b><span>Hold’em or Omaha, 5 to 9 seats</span></div>${TICON.chev}</button>
+    <button class="lrowbtn" id="ps-tour">${TICON.games}<div class="lr-txt"><b>Host a tournament</b><span>Blind levels, payouts, a winner</span></div>${TICON.chev}</button>
     <button class="lrowbtn" id="ps-join">${TICON.key}<div class="lr-txt"><b>Join with code</b><span>Got an invite from a friend?</span></div>${TICON.chev}</button>
   </div>`, () => {
     $('#ps-new').onclick = () => { closeModal(); openNewTable(); };
     $('#ps-join').onclick = () => { closeModal(); openJoinCode(); };
+    $('#ps-tour').onclick = () => { closeModal(); openHostTourney(); };
   });
 }
 
@@ -942,6 +1096,14 @@ function renderCorner() {
 function renderSession() {
   const T = S.table, el = $('#session');
   if (!el || !T) return;
+  if (T.tourney) {
+    const h = T.tourney;
+    S.levelEndsAt = performance.now() + (h.nextLevelMs || 0);
+    el.innerHTML = `<span class="lbl">${h.finalTable ? 'Final table · ' : ''}Level ${h.level}</span>
+      <b class="tclock">${fmt(h.sb)}/${fmt(h.bb)}<small> · ante ${fmt(h.ante)}</small></b>
+      <span class="tmeta">${h.status === 'running' ? `Next <span id="lvl-cd">${clock(h.nextLevelMs)}</span> · ` : ''}${h.left}/${h.entries} left${h.rank ? ` · you’re ${ordinal(h.rank)}` : ''}</span>`;
+    return;
+  }
   if (T.you < 0) { el.innerHTML = `<span class="lbl">Watching · ${blinds(T.sb, T.bb)}</span><span class="watch">${esc(T.name)}</span>`; return; }
   const n = T.net || 0;
   const label = n > 0 ? 'Up this table' : n < 0 ? 'Down this table' : 'Even so far';
@@ -957,10 +1119,11 @@ function openMenu() {
   const items = [
     ['invite', 'Invite friends', ICON.invite],
     ['felt', 'Table felt', ICON.felt],
-    ['lobby', 'Back to lobby', ICON.lobby],
+    ['lobby', T.tourney ? 'Tournament lobby' : 'Back to lobby', ICON.lobby],
   ];
+  if (T.tourney) items.splice(0, 1);
   const seated = [];
-  if (me) {
+  if (me && !T.tourney) {
     if (me.sittingOut && me.chips > 0) seated.push(['back', 'I’m back', ICON.play]);
     else if (!me.sittingOut) seated.push(['out', 'Sit out next hand', ICON.pause]);
     if (!inHand && me.chips < T.buyIn.max) seated.push(['rebuy', 'Add chips', ICON.plus]);
@@ -992,6 +1155,8 @@ async function menuAction(k) {
     const C = S.catalog, member = S.me && S.me.club && S.me.club.active;
     if (!C) return;
     openModal(`<h2>Table felt</h2>${feltPickerHTML(S.me, C, member)}<button class="btn" data-close>Done</button>`, () => bindFeltPicker($('#modal')));
+  } else if (k === 'lobby' && T.tourney) {
+    const id = T.tourney.id; leaveTableView(); renderTourney(id);
   } else if (k === 'lobby') {
     const me = T.you >= 0 ? T.seats[T.you] : null;
     if (me && T.phase === 'play' && me.dealt && !me.folded) openLeaveConfirm(); else leaveTable();
@@ -1159,7 +1324,7 @@ function renderStage() {
   const potPill = T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Total pot</span>${chipNum(T.pot)}</div>` : '<div class="pot ghost" aria-hidden="true"></div>';
   let html = `<div class="rail"><div class="trim"><div class="felt">
     <div class="felt-line" aria-hidden="true"></div>
-    <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${blinds(T.sb, T.bb)}</span></div>
+    <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${T.tourney ? `${fmt(T.sb)}/${fmt(T.bb)}` : blinds(T.sb, T.bb)}</span></div>
     ${potPill}
     <div class="board" aria-label="Board${T.street ? ', ' + esc(T.street) : ''}">${board}</div>
     ${result ? winBanner(T, now0) : `<div class="fmsg">${msg}</div>`}
@@ -1170,7 +1335,7 @@ function renderStage() {
     const [x, y] = seatPos(n, k, wide);
     const s = T.seats[i];
     if (!s) {
-      if (meSeated && !(T.isHost && T.phase === 'waiting')) continue;
+      if (T.tourney || (meSeated && !(T.isHost && T.phase === 'waiting'))) continue;
       const inner = !meSeated && S.me ? `<button class="open" data-sit="${i}" aria-label="Sit in seat ${i + 1}">Sit</button>` : '<div class="open" aria-label="Open seat"></div>';
       const bot = T.isHost ? `<button class="textbtn addbot" data-bot="${i}">+ Bot</button>` : '';
       html += `<div class="seat empty" style="left:${x}%;top:${y}%" data-seat="${i}">${inner}${bot}</div>`;
@@ -1273,7 +1438,7 @@ function flyChips(winners) {
     }
     setTimeout(() => {
       const plus = document.createElement('span');
-      plus.className = 'wonfloat'; plus.textContent = '+' + money(w.amount);
+      plus.className = 'wonfloat'; plus.textContent = '+' + fmt(w.amount);
       plus.style.left = to.x + 'px'; plus.style.top = (r.top - 4) + 'px';
       document.body.appendChild(plus);
       plus.animate([{ transform: 'translate(-50%,0)', opacity: 0 }, { transform: 'translate(-50%,-10px)', opacity: 1, offset: .2 }, { transform: 'translate(-50%,-34px)', opacity: 0 }], { duration: 1500, easing: 'ease-out' }).onfinish = () => plus.remove();
@@ -1297,6 +1462,12 @@ function renderMine(force) {
   if (!force && key === S.actionKey) return;
   S.actionKey = key;
 
+  if (!me && T.tourney) {
+    el.className = 'mine';
+    el.innerHTML = `<div class="t-watch"><p class="wait">You’re watching table ${T.tourney.tableNo || ''} of the ${esc(T.tourney.name)}.</p><button class="btn" id="tw-lobby">Tournament lobby</button></div>`;
+    $('#tw-lobby').onclick = () => { const id = T.tourney.id; leaveTableView(); renderTourney(id); };
+    return;
+  }
   if (!me) {
     el.className = 'mine';
     el.innerHTML = `<p class="wait">Tap an open seat to sit down. Buy-ins run ${money(T.buyIn.min)} to ${money(T.buyIn.max)}, and you have <span class="num" style="color:var(--brass)">${money(S.me ? S.me.bankroll : 0)}</span>.</p>`;
@@ -1329,7 +1500,7 @@ function renderMine(force) {
     // Two boxes: Fold and Check/Call. To bet or raise, drag the chip tower up: the Call box becomes "Raise to $X".
     const allInCall = !A.canCheck && A.toCall >= me.chips;
     const callTop = A.canCheck ? 'Check' : allInCall ? 'All in' : 'Call';
-    const callSub = A.canCheck ? '' : money(Math.min(A.toCall, me.chips));
+    const callSub = A.canCheck ? '' : fmt(Math.min(A.toCall, me.chips));
     S.callLabel = `<b>${callTop}</b>${callSub ? `<span>${callSub}</span>` : ''}`;
     html = `<div class="turnwrap ${A.canRaise ? '' : 'noraise'}"><div class="tw-left">${hero}
       <div class="dock two"><div class="turnbar" id="turnbar"></div>
@@ -1394,12 +1565,12 @@ function setTower(v) {
   S.raiseTo = v || 0;
   const t = !v ? 0 : CALL_ZONE + (1 - CALL_ZONE) * (A.maxTo > A.minTo ? Math.pow((v - A.minTo) / (A.maxTo - A.minTo), 1 / TOWER_EASE) : 1);
   const tw = $('#tower');
-  if (tw) { tw.style.setProperty('--t', t.toFixed(4)); tw.setAttribute('aria-valuenow', v || 0); tw.setAttribute('aria-valuetext', v ? money(v) : 'No raise'); tw.classList.toggle('max', !!v && v === A.maxTo); tw.classList.toggle('up', !!v); }
+  if (tw) { tw.style.setProperty('--t', t.toFixed(4)); tw.setAttribute('aria-valuenow', v || 0); tw.setAttribute('aria-valuetext', v ? fmt(v) : 'No raise'); tw.classList.toggle('max', !!v && v === A.maxTo); tw.classList.toggle('up', !!v); }
   const b = $('#a-call');
   if (b) {
     const allIn = v && v === (A.allIn || A.maxTo);
     b.classList.toggle('raising', !!v);
-    b.innerHTML = v ? `<b>${allIn ? 'All in' : A.currentBet === 0 ? 'Bet' : 'Raise to'}</b><span>${money(v)}</span>` : S.callLabel;
+    b.innerHTML = v ? `<b>${allIn ? 'All in' : A.currentBet === 0 ? 'Bet' : 'Raise to'}</b><span>${fmt(v)}</span>` : S.callLabel;
   }
 }
 
@@ -1546,6 +1717,12 @@ function tick() {
     const ring = $('#ring'); if (ring) ring.style.setProperty('--p', p.toFixed(3));
     const bar = $('#turnbar'); if (bar) bar.style.setProperty('--p', p.toFixed(3));
     const tm = $('#timer'); if (tm) { const s = Math.ceil(left / 1000); tm.textContent = `0:${String(s).padStart(2, '0')}`; }
+  }
+  // tournament clocks: the level timer at the table, and every countdown on the tournament screens
+  const lc = $('#lvl-cd'); if (lc && S.levelEndsAt) lc.textContent = clock(S.levelEndsAt - performance.now());
+  if (!S._cdTick || performance.now() - S._cdTick > 500) {
+    S._cdTick = performance.now();
+    document.querySelectorAll('[data-cd]').forEach(e => { e.textContent = clock(+e.dataset.cd - Date.now()); });
   }
   requestAnimationFrame(tick);
 }

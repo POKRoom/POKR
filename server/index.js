@@ -9,6 +9,7 @@ const { Table } = require('./engine');
 const { Store, START_BANKROLL } = require('./store');
 const { money } = require('./cards');
 const shop = require('./shop');
+const { createManager } = require('./tourneys');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -119,14 +120,77 @@ const hooks = {
   },
 };
 
+// ---------- tournaments ----------
+const tm = createManager({
+  Table, tables,
+  makeCode,
+  broadcast: t => broadcastTable(t),
+  charge(userId, cents, why) {
+    const u = store.byId(userId); if (!u) return 'Sign in first';
+    if (u.bankroll < cents) return 'Not enough in your balance for that buy-in';
+    u.bankroll -= cents; store.ledger(u, 'tourney-buyin', -cents, why); store.save(); sendMe(userId);
+    return null;
+  },
+  credit(userId, cents, why) {
+    const u = store.byId(userId); if (!u || !cents) return;
+    u.bankroll += cents; store.ledger(u, 'tourney-prize', cents, why); store.save(); sendMe(userId);
+  },
+  userInfo(userId) { const u = store.byId(userId); return u ? { name: u.name, avatar: u.avatar } : { name: 'Player', avatar: { a: 0, c: 0 } }; },
+  notify(userId, msg) { for (const c of clients) if (c.userId === userId) send(c, msg); },
+  moveClient(userId, code) {
+    const t = tables.get(code);
+    for (const c of clients) {
+      if (c.userId !== userId) continue;
+      const watchingTourney = c.code && tm.byTable.has(c.code);
+      if (!watchingTourney && !c.followTourney) continue;
+      c.code = code;
+      send(c, { t: 'moved', code });
+      if (t) { send(c, { t: 'chat', items: t.chat, reset: true }); send(c, { t: 'state', s: t.view(c.userId) }); }
+    }
+  },
+  changed: tour => tourneyChanged(tour),
+});
+let tourTimer = null;
+const dirtyTours = new Set();
+function tourneyChanged(tour) {
+  if (tour) dirtyTours.add(tour.id);
+  if (tourTimer) return;
+  tourTimer = setTimeout(() => {
+    tourTimer = null;
+    for (const c of clients) {
+      if (!c.userId) continue;
+      if (!c.code) send(c, { t: 'tourneys', list: tm.list(c.userId) });
+      if (c.tview && dirtyTours.has(c.tview)) send(c, { t: 'tourney', d: tm.detail(c.tview, c.userId) });
+    }
+    dirtyTours.clear();
+  }, 1000);
+}
+setInterval(() => tm.tick(), 1000).unref();
+const isTourneyTable = t => !!(t && t.tourney);
+
 // ---------- messages ----------
 const handlers = {
+  tourneys(c) { send(c, { t: 'tourneys', list: tm.list(c.userId) }); },
+  tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, c.userId); if (!d) return send(c, { t: 'error', message: 'That tournament doesn’t exist' }); send(c, { t: 'tourney', d }); },
+  tUnwatch(c) { c.tview = null; },
+  tReg(c, m) { const e = tm.register(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); c.followTourney = true; send(c, { t: 'notice', message: 'You’re registered' }); tourneyChanged(tm.tours.get(m.id)); },
+  tUnreg(c, m) { const e = tm.unregister(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); send(c, { t: 'notice', message: 'Unregistered. Your buy-in is back in your balance.' }); },
+  tHost(c, m) { const t = tm.host(c.userId, m); c.tview = t.id; send(c, { t: 'tourneyHosted', id: t.id }); send(c, { t: 'tourney', d: t.detail(c.userId) }); },
+  tStart(c, m) { const e = tm.start(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); },
+  tBots(c, m) { const e = tm.addBots(c.userId, m.id, Number(m.n)); if (e) return send(c, { t: 'error', message: e }); },
+  tSeat(c, m) {
+    const code = tm.myTable(c.userId, m.id);
+    if (!code) return send(c, { t: 'error', message: 'You don’t have a seat in that tournament right now' });
+    c.followTourney = true;
+    handlers.join(c, { code });
+  },
   hello(c, m) {
     const u = store.bySessionToken(m.token);
     if (!u) return send(c, { t: 'needProfile' });
     c.userId = u.id; c.token = m.token;
     send(c, { t: 'me', user: meOf(u) });
     send(c, { t: 'catalog', catalog: shop.catalog() });
+    send(c, { t: 'tourneys', list: tm.list(u.id) });
   },
 
   signup(c, m) {
@@ -189,7 +253,7 @@ const handlers = {
     }
   },
 
-  lobby(c) { send(c, lobbyPayload()); },
+  lobby(c) { send(c, lobbyPayload()); send(c, { t: 'tourneys', list: tm.list(c.userId) }); },
 
   // ---- Pro Pass, avatar shop, themes (test mode: nothing is charged) ----
   club(c, m) {
@@ -267,7 +331,8 @@ const handlers = {
 
   leave(c, m = {}) {
     const t = tables.get(c.code);
-    if (t && c.userId && !m.keepSeat) t.stand(c.userId);
+    if (t && c.userId && !m.keepSeat && !isTourneyTable(t)) t.stand(c.userId);
+    if (t && c.userId && isTourneyTable(t)) { c.followTourney = false; if (![...clients].some(o => o !== c && o.userId === c.userId && o.code === t.code)) t.setConnected(c.userId, false); }
     c.code = null;
     if (!m.keepSeat) send(c, lobbyPayload());
   },
@@ -275,6 +340,7 @@ const handlers = {
   sit(c, m) {
     const t = tables.get(c.code), u = store.byId(c.userId);
     if (!t || !u) return;
+    if (isTourneyTable(t)) return send(c, { t: 'error', message: 'Register for the tournament to get a seat' });
     const buyIn = Math.floor(Number(m.buyIn));
     if (!(buyIn >= t.buyInMin && buyIn <= t.buyInMax)) return send(c, { t: 'error', message: `Buy in between ${money(t.buyInMin)} and ${money(t.buyInMax)}` });
     if (buyIn > u.bankroll) return send(c, { t: 'error', message: 'You don’t have that many chips in your bankroll' });
@@ -287,11 +353,12 @@ const handlers = {
     sendMe(u.id);
   },
 
-  stand(c) { const t = tables.get(c.code); if (t && c.userId) t.stand(c.userId); },
+  stand(c) { const t = tables.get(c.code); if (t && c.userId && !isTourneyTable(t)) t.stand(c.userId); },
 
   rebuy(c, m) {
     const t = tables.get(c.code), u = store.byId(c.userId);
     if (!t || !u) return;
+    if (isTourneyTable(t)) return send(c, { t: 'error', message: 'No rebuys in this tournament' });
     const i = t.seatOf(u.id);
     if (i < 0) return;
     const room = t.buyInMax - t.seats[i].chips;
@@ -389,6 +456,7 @@ setInterval(() => {
 setInterval(() => {
   const now = Date.now();
   for (const t of tables.values()) {
+    if (isTourneyTable(t)) continue;
     t.seats.forEach((s, i) => {
       if (s && s.kind === 'human' && !s.connected && s.disconnectedAt && now - s.disconnectedAt > 5 * 60000) t.removeSeat(i);
     });

@@ -20,6 +20,12 @@ class Table {
     this.hostId = opts.hostId;
     this.isPrivate = !!opts.isPrivate;
     this.game = GAMES[opts.game] ? opts.game : 'nlh';
+    // Tournament tables play for tournament chips: no buy-ins, blinds set by the clock, a big blind ante,
+    // and players who sit out are still dealt in (and folded) until they bust.
+    this.tourney = opts.tourney || null;
+    this.ante = 0;
+    this.dead = 0;
+    this.fmt = this.tourney ? (c => Number(c).toLocaleString('en-US')) : money;
     this.maxSeats = Math.max(2, Math.min(9, Math.floor(opts.maxSeats) || 6));
     this.seats = Array(this.maxSeats).fill(null);
     const k = Number(process.env.TIMING_SCALE) || 1; // tests speed the table up
@@ -80,12 +86,13 @@ class Table {
   static inHand(s) { return !!(s && s.dealt && !s.folded); }
   static canAct(s) { return Table.inHand(s) && !s.allIn; }
   inHandCount() { return this.seats.filter(Table.inHand).length; }
-  potTotal() { return this.seats.reduce((a, s) => a + (s ? s.total : 0), 0); }
+  potTotal() { return this.dead + this.seats.reduce((a, s) => a + (s ? s.total : 0), 0); }
   seatOf(userId) { return this.seats.findIndex(s => s && s.kind === 'human' && s.userId === userId); }
-  eligible(s) { return !!(s && !s.leaving && !s.sittingOut && s.chips > 0); }
+  eligible(s) { return !!(s && !s.leaving && s.chips > 0 && (this.tourney || !s.sittingOut)); }
   humanCount() { return this.seats.filter(s => s && s.kind === 'human').length; }
   canStart() {
     const el = this.seats.filter(s => this.eligible(s));
+    if (this.tourney) return el.length >= 2 && !this.paused;
     return el.length >= 2 && el.some(s => s.kind === 'human' && s.connected);
   }
 
@@ -98,10 +105,27 @@ class Table {
       kind: 'human', userId: player.userId, name: player.name, avatar: player.avatar,
       chips, buyIns: chips, sittingOut: false, connected: true, timeouts: 0, leaving: false, disconnectedAt: 0,
     }, handReset());
-    this._log(`${player.name} sits down with ${money(chips)}`);
+    this._log(`${player.name} sits down with ${this.fmt(chips)}`);
     this.maybeStart();
     this._changed();
     return null;
+  }
+
+  // Tournament seating: put a player (human or bot) straight into a seat with tournament chips.
+  placeSeat(idx, p, chips) {
+    this.seats[idx] = Object.assign({
+      kind: p.kind, userId: p.userId || null, name: p.name, style: p.style, avatar: p.avatar,
+      chips, buyIns: chips, sittingOut: false, connected: p.kind === 'bot' ? true : p.connected !== false,
+      timeouts: 0, leaving: false, disconnectedAt: 0,
+    }, handReset());
+    this.maybeStart();
+    this._changed();
+  }
+  // Take a player out of a seat between hands (moving tables or busting). Returns what was there.
+  takeSeat(idx) {
+    const s = this.seats[idx];
+    this.seats[idx] = null;
+    return s;
   }
 
   addBot(idx) {
@@ -166,7 +190,7 @@ class Table {
     s.sittingOut = false;
     s.timeouts = 0;
     if (s.last === 'Busted') s.last = '';
-    this._log(`${s.name} adds ${money(amount)}`);
+    this._log(`${s.name} adds ${this.fmt(amount)}`);
     this.maybeStart();
     this._changed();
     return null;
@@ -210,8 +234,8 @@ class Table {
     this.seats.forEach((s, i) => { if (s && s.leaving) this._remove(i); });
     for (const s of this.seats) {
       if (!s) continue;
-      if (s.kind === 'bot' && s.chips < this.bb) { s.chips = this.buyInMax; this._log(`${s.name} reloads`); }
-      if (s.kind === 'human' && s.chips <= 0) s.sittingOut = true;
+      if (s.kind === 'bot' && s.chips < this.bb && !this.tourney) { s.chips = this.buyInMax; this._log(`${s.name} reloads`); }
+      if (s.kind === 'human' && s.chips <= 0 && !this.tourney) s.sittingOut = true;
     }
     if (!this.canStart()) {
       this.phase = 'waiting';
@@ -225,6 +249,8 @@ class Table {
     }
 
     this.handNo++;
+    this.dead = 0;
+    if (this.tourney && this.tourney.beforeHand) this.tourney.beforeHand(this); // picks up a new blind level
     this.deck = newDeck();
     this.board = [];
     this.result = null;
@@ -242,6 +268,12 @@ class Table {
     const sbI = n === 2 ? this.dealer : this.nextIdx(this.dealer, dealt);
     const bbI = this.nextIdx(sbI, dealt);
     this._log(`Hand #${this.handNo}`);
+    // Big blind ante: the big blind posts one ante for the whole table, as dead money, before the blind.
+    if (this.ante > 0) {
+      const b = this.seats[bbI], a = Math.min(this.ante, b.chips);
+      b.chips -= a; this.dead += a;
+      if (b.chips === 0) b.allIn = true;
+    }
     this._put(this.seats[sbI], this.sb); this.seats[sbI].last = 'Small blind';
     this._put(this.seats[bbI], this.bb); this.seats[bbI].last = 'Big blind';
     for (let r = 0; r < this.holeCount; r++) {
@@ -289,7 +321,8 @@ class Table {
       const { botMin, botMax } = this.timing;
       this._later(() => this.botTurn(i), botMin + Math.random() * (botMax - botMin));
     } else {
-      const ms = (!s.connected || s.sittingOut) ? Math.min(this.timing.turn, 6000) : this.timing.turn;
+      const away = !s.connected || s.sittingOut;
+      const ms = away ? Math.min(this.timing.turn, this.tourney ? 1500 : 6000) : this.timing.turn;
       this.turnDeadline = Date.now() + ms;
       this._changed();
       this._later(() => this.timeout(i), ms);
@@ -337,8 +370,8 @@ class Table {
     else if (kind === 'check') { s.last = 'Check'; this._log(`${s.name} checks`); }
     else if (kind === 'call') {
       const a = this._put(s, toCall);
-      s.last = s.allIn ? 'All in' : `Call ${money(a)}`;
-      this._log(`${s.name} calls ${money(a)}${s.allIn ? ' and is all in' : ''}`);
+      s.last = s.allIn ? 'All in' : `Call ${this.fmt(a)}`;
+      this._log(`${s.name} calls ${this.fmt(a)}${s.allIn ? ' and is all in' : ''}`);
     } else {
       const prev = this.currentBet;
       this._put(s, amount - s.bet);
@@ -351,8 +384,8 @@ class Table {
         this.currentBet = s.bet;
         this.raises++;
       }
-      s.last = s.allIn ? 'All in' : (prev === 0 ? `Bet ${money(s.bet)}` : `Raise ${money(s.bet)}`);
-      this._log(`${s.name} ${prev === 0 ? 'bets' : 'raises to'} ${money(s.bet)}${s.allIn ? ' (all in)' : ''}`);
+      s.last = s.allIn ? 'All in' : (prev === 0 ? `Bet ${this.fmt(s.bet)}` : `Raise ${this.fmt(s.bet)}`);
+      this._log(`${s.name} ${prev === 0 ? 'bets' : 'raises to'} ${this.fmt(s.bet)}${s.allIn ? ' (all in)' : ''}`);
     }
     if (!auto && s.kind === 'human') s.timeouts = 0;
     s.acted = true;
@@ -392,7 +425,7 @@ class Table {
     w.chips += amt;
     w.won = amt;
     this.result = { foldWin: true, winners: [{ seat: this.seats.indexOf(w), name: w.name, amount: amt, hand: null }] };
-    this._log(`${w.name} wins ${money(amt)}`);
+    this._log(`${w.name} wins ${this.fmt(amt)}`);
     this.endHand();
   }
 
@@ -408,7 +441,7 @@ class Table {
     let prev = 0;
     levels.forEach((lv, k) => {
       const cap = k === levels.length - 1 ? Infinity : lv;
-      let amt = 0;
+      let amt = k === 0 ? this.dead : 0;
       for (const s of this.seats) if (s) amt += Math.max(0, Math.min(s.total, cap) - Math.min(s.total, prev));
       const elig = contenders.filter(s => s.total >= lv);
       const top = Math.max(...elig.map(s => s.score));
@@ -420,7 +453,7 @@ class Table {
     });
     for (const s of contenders) this._log(`${s.name} shows ${s.hand.map(cardTxt).join(' ')}: ${handName(s.score)}`);
     const winners = contenders.filter(s => s.won > 0);
-    for (const w of winners) this._log(`${w.name} wins ${money(w.won)}`);
+    for (const w of winners) this._log(`${w.name} wins ${this.fmt(w.won)}`);
     this.result = {
       foldWin: false,
       winners: winners.map(w => ({ seat: this.seats.indexOf(w), name: w.name, amount: w.won, hand: describe(w.score) })),
@@ -438,7 +471,7 @@ class Table {
     this.seats.forEach((s, i) => {
       if (!s || !s.dealt) return;
       summary.push({ seat: i, kind: s.kind, userId: s.userId, delta: s.chips - s.startChips, won: s.won, pot, chips: s.chips });
-      if (s.kind === 'human' && s.chips === 0) { s.sittingOut = true; s.last = 'Busted'; }
+      if (s.kind === 'human' && s.chips === 0 && !this.tourney) { s.sittingOut = true; s.last = 'Busted'; }
     });
     if (this.hooks.onHandEnd) this.hooks.onHandEnd(this, summary);
     this.seats.forEach((s, i) => { if (s && s.leaving) this._remove(i); });
@@ -495,7 +528,8 @@ class Table {
       turnMs: this.turnDeadline ? Math.max(0, this.turnDeadline - now) : 0, turnTotal: this.timing.turn,
       nextHandMs: this.nextHandAt ? Math.max(0, this.nextHandAt - now) : 0,
       seats, you: me, myHand, net, actions, result: this.result, log: this.log.slice(-40),
-      buyIn: { min: this.buyInMin, max: this.buyInMax },
+      buyIn: { min: this.buyInMin, max: this.buyInMax }, ante: this.ante,
+      tourney: this.tourney && this.tourney.hud ? this.tourney.hud(this, userId) : null,
     };
   }
 
