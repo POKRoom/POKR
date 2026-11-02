@@ -2,13 +2,24 @@
 // Pokr's business rules in one place, shared by the real server and the in-Claude preview.
 //
 // How Pokr makes money: never from the games. No rake, no cut of pots, free deposits, free
-// standard withdrawals. Revenue comes from Pokr Club (themes + member avatars), single avatar
+// standard withdrawals. Revenue comes from Pro Pass (themes + member avatars), single avatar
 // purchases, and an optional fee for instant transfers.
 //
 // Everything here runs in TEST MODE: no card is charged and no bank is touched. Cosmetic
 // purchases are tracked separately from the poker balance and never draw from it.
 
-const CLUB = { priceCents: 499, period: 'month', name: 'Pokr Club' };
+const CLUB = { priceCents: 499, period: 'month', name: 'Pro Pass' };
+
+// Table felts: classic green is free; the rest come with Pro Pass.
+const FELTS = [
+  { id: 'green', name: 'Classic Green', felt: '#17463A', deep: '#081D17', club: false },
+  { id: 'blue', name: 'Midnight Blue', felt: '#1C3B66', deep: '#08142A', club: true },
+  { id: 'burgundy', name: 'Burgundy', felt: '#5C1B26', deep: '#21070C', club: true },
+  { id: 'graphite', name: 'Graphite', felt: '#2E2F33', deep: '#0F1012', club: true },
+  { id: 'teal', name: 'Deep Teal', felt: '#0E5152', deep: '#03201F', club: true },
+  { id: 'purple', name: 'Royal Purple', felt: '#3D2763', deep: '#140B27', club: true },
+  { id: 'tan', name: 'Tournament Tan', felt: '#6E5638', deep: '#2B2013', club: true },
+];
 
 const THEMES = [
   { id: 'lounge', name: 'Black Room', blurb: 'Graphite, deep green felt, a touch of gold', club: false },
@@ -17,7 +28,7 @@ const THEMES = [
   { id: 'zebra', name: 'Zebra Room', blurb: 'Lacquer-red felt and zebra-print walls', club: true },
 ];
 
-// Avatar indexes: 0-15 free for everyone, 16-21 included with Pokr Club, 22-27 sold one at a time.
+// Avatar indexes: 0-15 free for everyone, 16-21 included with Pro Pass, 22-27 sold one at a time.
 const FREE_AVATARS = 16;
 const CLUB_AVATARS = [16, 17, 18, 19, 20, 21];
 const SHOP_AVATARS = [22, 23, 24, 25, 26, 27];
@@ -32,6 +43,7 @@ const SETTLE_MS = Number((typeof process !== 'undefined' && process.env && proce
 function ensure(u) {
   if (!u.club) u.club = { active: false };
   if (!u.theme) u.theme = 'lounge';
+  if (!u.felt) u.felt = 'green';
   if (!Array.isArray(u.ownedAvatars)) u.ownedAvatars = [];
   if (!Array.isArray(u.transactions)) u.transactions = [];
   if (!Array.isArray(u.purchases)) u.purchases = [];
@@ -57,15 +69,16 @@ function canUseTheme(u, id) {
 function club(u, action, now = Date.now()) {
   ensure(u);
   if (action === 'join') {
-    if (u.club.active) return { error: 'You’re already in Pokr Club' };
+    if (u.club.active) return { error: 'You already have Pro Pass' };
     u.club = { active: true, since: now, renewsAt: now + 30 * 864e5, test: true };
     u.purchases.push({ ts: now, item: 'club', cents: CLUB.priceCents, test: true });
     return { ok: true };
   }
   if (action === 'cancel') {
-    if (!u.club.active) return { error: 'You’re not a member' };
+    if (!u.club.active) return { error: 'You don’t have Pro Pass' };
     u.club = { active: false, endedAt: now };
     if (!canUseTheme(u, u.theme)) u.theme = 'lounge';
+    if (!canUseFelt(u, u.felt)) u.felt = 'green';
     if (u.avatar && !canUseAvatar(u, u.avatar.a)) u.avatar = { a: 0, c: 0 };
     return { ok: true, resetAvatar: true };
   }
@@ -81,10 +94,23 @@ function buyAvatar(u, a, now = Date.now()) {
   return { ok: true };
 }
 
+function canUseFelt(u, id) {
+  ensure(u);
+  const f = FELTS.find(x => x.id === id);
+  return !!f && (!f.club || !!u.club.active);
+}
+function setFelt(u, id) {
+  ensure(u);
+  if (!FELTS.some(f => f.id === id)) return { error: 'Unknown felt' };
+  if (!canUseFelt(u, id)) return { error: 'That felt comes with Pro Pass' };
+  u.felt = id;
+  return { ok: true };
+}
+
 function setTheme(u, id) {
   ensure(u);
   if (!THEMES.some(t => t.id === id)) return { error: 'Unknown theme' };
-  if (!canUseTheme(u, id)) return { error: 'That theme comes with Pokr Club' };
+  if (!canUseTheme(u, id)) return { error: 'That theme comes with Pro Pass' };
   u.theme = id;
   return { ok: true };
 }
@@ -138,11 +164,12 @@ function publicEconomy(u) {
   return {
     club: { active: !!u.club.active, renewsAt: u.club.renewsAt || null },
     theme: u.theme,
+    felt: u.felt,
     ownedAvatars: u.ownedAvatars.slice(),
     transactions: u.transactions.slice(0, 20),
   };
 }
 
-const catalog = () => ({ club: CLUB, themes: THEMES, clubAvatars: CLUB_AVATARS, shopAvatars: SHOP_AVATARS, avatarPrice: AVATAR_PRICE_CENTS, fees: FEES, limits: LIMITS, freeAvatars: FREE_AVATARS, testMode: true });
+const catalog = () => ({ club: CLUB, themes: THEMES, felts: FELTS, clubAvatars: CLUB_AVATARS, shopAvatars: SHOP_AVATARS, avatarPrice: AVATAR_PRICE_CENTS, fees: FEES, limits: LIMITS, freeAvatars: FREE_AVATARS, testMode: true });
 
-module.exports = { catalog, ensure, canUseAvatar, canUseTheme, club, buyAvatar, setTheme, cashier, settle, publicEconomy, instantFee, AVATAR_COUNT, FREE_AVATARS };
+module.exports = { catalog, ensure, canUseAvatar, canUseTheme, canUseFelt, club, buyAvatar, setTheme, setFelt, cashier, settle, publicEconomy, instantFee, AVATAR_COUNT, FREE_AVATARS };

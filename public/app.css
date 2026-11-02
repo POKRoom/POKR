@@ -1218,3 +1218,118 @@ body, body[data-skin=lounge], body[data-skin=neon], body[data-skin=monaco] {
 .pc.face.hi { box-shadow: 0 0 0 2px var(--brass), 0 6px 16px rgba(0, 0, 0, .45); }
 .pc.face.s0:not(.back):not(.empty) { color: #161616; } .pc.face.s1:not(.back):not(.empty) { color: #C9271C; }
 .pc.face.s2:not(.back):not(.empty) { color: #1E5BC6; } .pc.face.s3:not(.back):not(.empty) { color: #1E8A4C; }
+
+/* =====================================================================
+   NAMEPLATE SEATS — one solid plate per player: avatar, name, stack.
+   Cards peek from behind the plate; the action sits on the bottom edge.
+   ===================================================================== */
+.np { position: relative; display: flex; align-items: center; gap: 8px; width: 108px; padding: 6px 10px 6px 6px; border-radius: 14px;
+  background: linear-gradient(180deg, #1C1C1F, #131315); border: 1px solid rgba(255, 255, 255, .09); box-shadow: 0 10px 24px rgba(0, 0, 0, .5); transition: border-color .2s, box-shadow .2s, opacity .3s; }
+.np .ava { --size: 30px; flex: none; }
+.np .ava.mono { font-size: 10.5px; }
+.np-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.18; }
+.np .nm { font-size: 11px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np .ch { font-size: 14px; font-weight: 650; color: var(--cream); font-variant-numeric: tabular-nums; letter-spacing: -.015em; }
+.np-cards { position: absolute; z-index: -1; left: 50%; bottom: calc(100% - 14px); translate: -50% 0; display: flex; }
+.np-cards .pc { --w: 24px; }
+.np-cards .pc:first-child { transform: rotate(-8deg); }
+.np-cards .pc:last-child { transform: rotate(8deg); }
+.np-cards .pc + .pc { margin-left: -9px; }
+.np.n4 .np-cards .pc { --w: 22px; }
+.np.n4 .np-cards .pc + .pc { margin-left: -12px; }
+.np.n4 .np-cards .pc:nth-child(2) { transform: rotate(-3deg); }
+.np.n4 .np-cards .pc:nth-child(3) { transform: rotate(3deg); }
+.np-cards .pc.deal { animation: holeIn .4s cubic-bezier(.2, .8, .2, 1) backwards; }
+.seat.shown .np-cards { z-index: 2; bottom: calc(100% + 3px); gap: 2px; }
+.seat.shown .np-cards .pc { --w: 30px; transform: none; margin: 0; }
+.seat.shown .np.n4 .np-cards .pc { --w: 26px; }
+.seat.shown .np-cards .pc.hi { transform: translateY(-4px); }
+.np-tag { position: absolute; z-index: 3; left: 50%; bottom: -9px; translate: -50% 0; white-space: nowrap; padding: 2px 8px; border-radius: 6px;
+  font-size: 9.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--cream); background: #26262A; border: 1px solid rgba(255, 255, 255, .1); }
+.np-tag.raise { color: var(--brass); border-color: rgba(201, 168, 106, .45); }
+.np-tag.allin { color: #fff; background: #8E2A22; border-color: transparent; }
+.np-tag.fold { color: var(--muted); background: #18181A; }
+.np-tag.win { color: #17130C; background: var(--brass); border-color: transparent; }
+.np .dealer { position: absolute; z-index: 4; right: -7px; top: -7px; width: 18px; height: 18px; border-radius: 50%; background: var(--cream); color: #111;
+  font: 750 9px/18px var(--sans); text-align: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
+.np-timer { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.np-timer i { display: block; height: 100%; width: calc(var(--p, 1) * 100%); background: var(--brass); border-radius: 2px; }
+.seat.turn .np { border-color: rgba(201, 168, 106, .75); box-shadow: 0 0 0 3px rgba(201, 168, 106, .12), 0 10px 24px rgba(0, 0, 0, .5); }
+.seat.won .np { border-color: var(--brass); box-shadow: 0 0 26px rgba(201, 168, 106, .35), 0 10px 24px rgba(0, 0, 0, .5); }
+.seat.folded .np, .seat.away .np { opacity: .5; }
+.seat.folded .np-cards { opacity: 0; }
+.seat.folded, .seat.away { opacity: 1; }
+@media (max-width: 420px) { .np { width: 98px; gap: 6px; padding: 5px 8px 5px 5px; } .np .ava { --size: 26px; } .np .ch { font-size: 13px; } }
+
+/* your cards in Omaha: four, slightly overlapped */
+.mycards.n4 .pc { --w: clamp(46px, 12.6vw, 56px); }
+.mycards.n4 .pc + .pc { margin-left: -8px; }
+.mycards.n4 .pc:first-child, .mycards.n4 .pc:last-child { margin-right: 0; }
+.mycards .pc.empty { opacity: 0; }
+
+/* lobby + create sheet */
+.tcard .bl .gtag { display: block; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .02em; margin-top: 2px; }
+.game-seg { margin-bottom: 4px; }
+.game-seg button[aria-checked=true] { background: rgba(255, 255, 255, .09); color: var(--cream); }
+
+/* =====================================================================
+   CHIP TOWER — drag the stack up to bet more.
+   ===================================================================== */
+.picker.tower-picker { display: grid; grid-template-columns: minmax(0, 1fr) 78px; gap: 16px; padding: 14px 14px 14px 16px; }
+.tp-left { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tower-picker .pk-head { display: flex; justify-content: space-between; align-items: center; }
+.tower-picker .pk-val { font-size: 34px; font-weight: 650; letter-spacing: -.03em; line-height: 1.05; color: var(--cream); font-variant-numeric: tabular-nums; }
+.tp-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
+.tp-pre:nth-child(5) { grid-column: span 2; }
+.tp-pre { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; padding: 9px 11px; border-radius: 10px; background: #1D1D20;
+  border: 1px solid rgba(255, 255, 255, .08); color: var(--cream); font: inherit; cursor: pointer; transition: background .15s, color .15s; }
+.tp-pre b { font-size: 13px; font-weight: 600; }
+.tp-pre span { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tp-pre.on { background: var(--cream); color: #0E0E0F; border-color: transparent; }
+.tp-pre.on span { color: #55534F; }
+.tower-picker .pk-go { margin-top: auto; height: 50px; border: 0; border-radius: 12px; background: var(--cream); color: #0E0E0F; font: 600 16px var(--sans); cursor: pointer; }
+.tower { position: relative; display: flex; justify-content: center; min-height: 236px; padding: 20px 0; touch-action: none; user-select: none; cursor: ns-resize; outline: none; }
+.tw-track { position: relative; width: 48px; height: 100%; border-radius: 12px; background: rgba(255, 255, 255, .025); border: 1px dashed rgba(255, 255, 255, .13); }
+.tw-fill { position: absolute; left: 4px; right: 4px; bottom: 4px; height: max(10px, calc((100% - 8px) * var(--t, 0))); border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, .16), transparent 28%, transparent 70%, rgba(0, 0, 0, .35)),
+    repeating-linear-gradient(to top, rgba(0, 0, 0, .6) 0 1.5px, transparent 1.5px 9px),
+    repeating-linear-gradient(90deg, #2A2A2F 0 6px, #C9A86A 6px 10px, #2A2A2F 10px 16px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .45); transition: height .06s linear; }
+.tower.max .tw-fill { background:
+    linear-gradient(90deg, rgba(255, 255, 255, .2), transparent 28%, transparent 70%, rgba(0, 0, 0, .3)),
+    repeating-linear-gradient(to top, rgba(0, 0, 0, .55) 0 1.5px, transparent 1.5px 9px),
+    repeating-linear-gradient(90deg, #8E2A22 0 6px, #F2F0EC 6px 10px, #8E2A22 10px 16px);
+  box-shadow: 0 0 22px rgba(184, 50, 42, .45); }
+.tw-thumb { position: absolute; left: 50%; bottom: calc(4px + (100% - 8px) * var(--t, 0)); translate: -50% 50%; width: 64px; height: 26px; border-radius: 13px;
+  background: var(--cream); box-shadow: 0 6px 16px rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; gap: 3px; transition: scale .12s; }
+.tw-thumb i { width: 2px; height: 10px; border-radius: 1px; background: #8C8A86; }
+.tower.drag .tw-thumb, .tower:focus-visible .tw-thumb { scale: 1.08; }
+.tw-cap { position: absolute; left: 50%; translate: -50% 0; font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.tw-cap.top { top: 0; } .tw-cap.bot { bottom: 0; }
+.mine.picking .hero { display: none; }
+
+/* =====================================================================
+   TABLE FELTS (Pro Pass)
+   ===================================================================== */
+body[data-felt=blue] { --felt: #1C3B66; --felt-deep: #08142A; }
+body[data-felt=burgundy] { --felt: #5C1B26; --felt-deep: #21070C; }
+body[data-felt=graphite] { --felt: #2E2F33; --felt-deep: #0F1012; }
+body[data-felt=teal] { --felt: #0E5152; --felt-deep: #03201F; }
+body[data-felt=purple] { --felt: #3D2763; --felt-deep: #140B27; }
+body[data-felt=tan] { --felt: #6E5638; --felt-deep: #2B2013; }
+.felts { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 10px; margin: 6px 0 4px; }
+.feltopt { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 8px 10px; border-radius: 14px; background: rgba(255, 255, 255, .02);
+  border: 1px solid rgba(255, 255, 255, .08); color: var(--cream); font: inherit; text-align: left; cursor: pointer; }
+.feltopt.using { border-color: var(--cream); }
+.fswatch { width: 100%; aspect-ratio: 16 / 10; border-radius: 999px; border: 5px solid #1A1A1D; margin-bottom: 5px;
+  background: radial-gradient(ellipse at 50% 40%, var(--f), var(--fd) 90%); box-shadow: 0 6px 14px rgba(0, 0, 0, .4); }
+.feltopt[data-locked] .fswatch { opacity: .6; }
+.fname { font-size: 12.5px; font-weight: 600; }
+.fstate { font-size: 11px; color: var(--muted); }
+.feltopt.using .fstate { color: var(--brass); }
+.dialog .felts + .btn { width: 100%; margin-top: 10px; }
+.np-tag { bottom: -18px; }
+.fswatch { border-color: #2C2C31; background: radial-gradient(ellipse at 50% 38%, color-mix(in srgb, var(--f) 80%, #fff 20%), var(--f) 45%, var(--fd) 95%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 6px 14px rgba(0, 0, 0, .4); }
+.thumb.t-lounge { background: radial-gradient(120% 80% at 50% 0%, #1D1D20, #0B0B0C); }

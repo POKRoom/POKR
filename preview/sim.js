@@ -139,7 +139,7 @@
       if (!db.user) return;
       const name = String(m.name || '').trim().slice(0, 16);
       if (name.length < 2) return out({ t: 'error', message: 'Pick a name with at least 2 characters' });
-      if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pokr Club or the shop' });
+      if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
       db.user.name = name; db.user.avatar = m.avatar;
       for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = m.avatar; hooks.onChange(t); } }
       persist();
@@ -149,9 +149,10 @@
     club(c, m) {
       const r = shop.club(db.user, m.action); if (r.error) return out({ t: 'error', message: r.error });
       if (r.resetAvatar) for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
-      persist(); sendMe(); out({ t: 'notice', message: m.action === 'join' ? 'Welcome to Pokr Club' : 'Membership canceled' });
+      persist(); sendMe(); out({ t: 'notice', message: m.action === 'join' ? 'Pro Pass is on' : 'Membership canceled' });
     },
     buyAvatar(c, m) { const r = shop.buyAvatar(db.user, Number(m.a)); if (r.error) return out({ t: 'error', message: r.error }); persist(); sendMe(); out({ t: 'notice', message: 'Avatar unlocked' }); },
+    setFelt(c, m) { const r = shop.setFelt(db.user, String(m.felt)); if (r.error) return out({ t: 'error', message: r.error }); persist(); sendMe(); },
     setTheme(c, m) { const r = shop.setTheme(db.user, String(m.theme)); if (r.error) return out({ t: 'error', message: r.error }); persist(); sendMe(); },
     cashier(c, m) {
       const r = shop.cashier(db.user, { action: m.action, amount: m.amount, speed: m.speed }); if (r.error) return out({ t: 'error', message: r.error });
@@ -167,7 +168,7 @@
     create(c, m) {
       const st = STAKES[m.stakes] || STAKES['10-25'];
       const code = makeCode();
-      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate }, hooks);
+      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh' }, hooks);
       tables.set(code, t);
       [1, 3, 4].forEach(i => t.addBot(i));
       out({ t: 'created', code });

@@ -1,7 +1,9 @@
 'use strict';
 // The table engine. The server is the only place cards exist: clients get a personalized view
 // with their own hole cards and nobody else's until showdown.
-const { newDeck, best, handName, describe, cardTxt, money } = require('./cards');
+const { newDeck, bestFor, handName, describe, cardTxt, money } = require('./cards');
+
+const GAMES = { nlh: { name: 'No-Limit Hold’em', short: 'NLH', hole: 2 }, plo: { name: 'Pot-Limit Omaha', short: 'PLO', hole: 4 } };
 const bots = require('./bots');
 
 const handReset = () => ({
@@ -17,6 +19,7 @@ class Table {
     this.bb = opts.bb;
     this.hostId = opts.hostId;
     this.isPrivate = !!opts.isPrivate;
+    this.game = GAMES[opts.game] ? opts.game : 'nlh';
     this.maxSeats = opts.maxSeats || 6;
     this.seats = Array(this.maxSeats).fill(null);
     const k = Number(process.env.TIMING_SCALE) || 1; // tests speed the table up
@@ -46,6 +49,16 @@ class Table {
 
   get buyInMin() { return this.bb * 20; }
   get buyInMax() { return this.bb * 100; }
+  get holeCount() { return GAMES[this.game].hole; }
+
+  // The most a player may raise to. No-limit: everything they have. Pot-limit: the current bet,
+  // plus the pot after they call (every chip already in the middle, this street's bets included).
+  maxRaiseTo(s) {
+    const allIn = s.bet + s.chips;
+    if (this.game !== 'plo') return allIn;
+    const toCall = this.currentBet - s.bet;
+    return Math.min(allIn, this.currentBet + this.potTotal() + toCall);
+  }
 
   // ---------- helpers ----------
   _log(t) { this.log.push(t); if (this.log.length > 80) this.log.shift(); }
@@ -231,7 +244,7 @@ class Table {
     this._log(`Hand #${this.handNo}`);
     this._put(this.seats[sbI], this.sb); this.seats[sbI].last = 'Small blind';
     this._put(this.seats[bbI], this.bb); this.seats[bbI].last = 'Big blind';
-    for (let r = 0; r < 2; r++) {
+    for (let r = 0; r < this.holeCount; r++) {
       for (let k = 1; k <= this.seats.length; k++) {
         const s = this.seats[(this.dealer + k) % this.seats.length];
         if (dealt(s)) s.hand.push(this.deck.pop());
@@ -310,7 +323,7 @@ class Table {
     if (kind === 'call' && toCall === 0) kind = 'check';
     if (kind === 'check' && toCall > 0) return 'You need to call or fold';
     if (kind === 'raise') {
-      const max = s.bet + s.chips;
+      const max = this.maxRaiseTo(s);
       if (s.chips <= toCall) return 'You don’t have enough chips to raise';
       const min = Math.min(this.currentBet + this.minRaise, max);
       amount = Math.floor(Number(amount));
@@ -386,7 +399,7 @@ class Table {
   showdown() {
     const contenders = this.seats.filter(Table.inHand);
     for (const s of contenders) {
-      const b = best([...s.hand, ...this.board]);
+      const b = bestFor(this.game, s.hand, this.board);
       s.shown = true; s.score = b.score; s.best = b.five;
     }
     const n = this.seats.length;
@@ -455,15 +468,15 @@ class Table {
       const s = this.seats[me];
       if (s.dealt && s.hand.length) {
         // nothing to say before the flop; after it, say it the way you'd say it out loud
-        if (this.board.length >= 3 && !s.folded) myHand = describe(best([...s.hand, ...this.board]).score);
+        if (this.board.length >= 3 && !s.folded) myHand = describe(bestFor(this.game, s.hand, this.board).score);
       }
       if (this.phase === 'play' && this.toAct === me) {
         const toCall = this.currentBet - s.bet;
-        const max = s.bet + s.chips;
+        const max = this.maxRaiseTo(s);
         actions = {
           toCall: Math.min(toCall, s.chips), canCheck: toCall === 0,
           canRaise: s.chips > toCall, minTo: Math.min(this.currentBet + this.minRaise, max), maxTo: max,
-          currentBet: this.currentBet,
+          currentBet: this.currentBet, potLimit: this.game === 'plo', allIn: s.bet + s.chips,
         };
       }
     }
@@ -476,7 +489,7 @@ class Table {
     }
     const pot = this.phase === 'done' ? this.seats.reduce((a, s) => a + (s ? s.won : 0), 0) : this.potTotal();
     return {
-      code: this.code, name: this.name, sb: this.sb, bb: this.bb, isPrivate: this.isPrivate,
+      code: this.code, name: this.name, sb: this.sb, bb: this.bb, isPrivate: this.isPrivate, game: this.game,
       isHost: this.hostId === userId, phase: this.phase, handNo: this.handNo, street: this.street,
       board: this.board, pot, currentBet: this.currentBet, dealer: this.dealer, toAct: this.toAct,
       turnMs: this.turnDeadline ? Math.max(0, this.turnDeadline - now) : 0, turnTotal: this.timing.turn,
@@ -488,7 +501,7 @@ class Table {
 
   summary() {
     return {
-      code: this.code, name: this.name, sb: this.sb, bb: this.bb,
+      code: this.code, name: this.name, sb: this.sb, bb: this.bb, game: this.game,
       players: this.seats.filter(s => s && s.kind === 'human').length,
       bots: this.seats.filter(s => s && s.kind === 'bot').length,
       seats: this.seats.length, phase: this.phase,
@@ -496,4 +509,4 @@ class Table {
   }
 }
 
-module.exports = { Table };
+module.exports = { Table, GAMES };

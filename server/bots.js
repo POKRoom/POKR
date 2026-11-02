@@ -23,14 +23,15 @@ function decide(t, i) {
   const st = STYLES[p.style] || STYLES.rock;
   const toCall = t.currentBet - p.bet;
   const opp = Math.max(1, t.seats.filter(s => s && s.dealt && !s.folded).length - 1);
-  const eq = equity(p.hand, t.board, opp, t.board.length ? 220 : 180);
+  const plo = t.game === 'plo';
+  const eq = equity(p.hand, t.board, opp, plo ? (t.board.length ? 90 : 70) : (t.board.length ? 220 : 180), t.game);
   const rel = eq * (opp + 1); // 1.0 = an average hand in this spot
   const pot = t.potTotal();
   const r = Math.random();
   const noise = (Math.random() - 0.5) * 0.08;
   const sizeFor = f => {
     const x = t.currentBet + Math.max(t.minRaise, Math.round((pot * f) / t.sb) * t.sb);
-    return Math.min(x, p.bet + p.chips);
+    return Math.min(x, p.bet + p.chips, t.maxRaiseTo ? t.maxRaiseTo(p) : Infinity);
   };
   const canRaise = p.chips > toCall && t.raises < 3;
 

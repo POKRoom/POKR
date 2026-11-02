@@ -177,7 +177,7 @@ const handlers = {
     if (!validAvatar(m.avatar)) return send(c, { t: 'error', message: 'Pick an avatar' });
     const avatar = { a: m.avatar.a, c: m.avatar.c };
     const u = c.userId && store.byId(c.userId);
-    if (u && !shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pokr Club or the shop' });
+    if (u && !shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
     if (u) {
       u.name = name; u.avatar = avatar;
       store.save();
@@ -191,14 +191,14 @@ const handlers = {
 
   lobby(c) { send(c, lobbyPayload()); },
 
-  // ---- Pokr Club, avatar shop, themes (test mode: nothing is charged) ----
+  // ---- Pro Pass, avatar shop, themes (test mode: nothing is charged) ----
   club(c, m) {
     const u = store.byId(c.userId);
     const r = shop.club(u, m.action);
     if (r.error) return send(c, { t: 'error', message: r.error });
     if (r.resetAvatar) for (const t of tables.values()) { const i = t.seatOf(u.id); if (i >= 0) { t.seats[i].avatar = u.avatar; broadcastTable(t); } }
     store.save(); sendMe(u.id);
-    send(c, { t: 'notice', message: m.action === 'join' ? 'Welcome to Pokr Club' : 'Membership canceled' });
+    send(c, { t: 'notice', message: m.action === 'join' ? 'Pro Pass is on' : 'Membership canceled' });
   },
   buyAvatar(c, m) {
     const u = store.byId(c.userId);
@@ -206,6 +206,12 @@ const handlers = {
     if (r.error) return send(c, { t: 'error', message: r.error });
     store.save(); sendMe(u.id);
     send(c, { t: 'notice', message: 'Avatar unlocked' });
+  },
+  setFelt(c, m) {
+    const u = store.byId(c.userId);
+    const r = shop.setFelt(u, String(m.felt));
+    if (r.error) return send(c, { t: 'error', message: r.error });
+    store.save(); sendMe(u.id);
   },
   setTheme(c, m) {
     const u = store.byId(c.userId);
@@ -243,7 +249,7 @@ const handlers = {
     const stakes = STAKES[m.stakes] || STAKES['10-25'];
     const code = makeCode();
     const name = cleanText(m.name, 28) || `${u.name}'s table`;
-    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate }, hooks);
+    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh' }, hooks);
     tables.set(code, t);
     send(c, { t: 'created', code });
     lobbyChanged();

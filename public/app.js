@@ -1,7 +1,7 @@
 'use strict';
 /* Pokr web client. The server holds the truth; this file only draws what it's told and sends intents. */
 
-// 0-15 free, 16-21 Pokr Club, 22-27 avatar shop (mirrors server/shop.js)
+// 0-15 free, 16-21 Pro Pass, 22-27 avatar shop (mirrors server/shop.js)
 const AVATARS = ['🦊', '🐻', '🐼', '🦁', '🐯', '🐸', '🐵', '🦉', '🐙', '🦈', '🐺', '🐰', '🦄', '🐲', '👽', '🤠', '🦩', '🐆', '🦚', '🎩', '👑', '🃏', '🐞', '🦖', '🐊', '🦅', '🐋', '🦂'];
 const COLORS = ['#C8202B', '#D9A84E', '#2E8F86', '#3E5FB0', '#8E3FA0', '#D0456E', '#5E9A4E', '#7A6A62'];
 const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
@@ -15,6 +15,7 @@ const SUIT_SVG = [
   '<circle cx="12" cy="7.5" r="4.3"/><circle cx="7" cy="13.5" r="4.3"/><circle cx="17" cy="13.5" r="4.3"/><rect x="9" y="8" width="6" height="7"/><path d="M11 13L9.5 22H14.5L13 13Z"/>',
 ];
 const ICON = {
+  felt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="6" width="19" height="12" rx="6"/><rect x="6" y="9" width="12" height="6" rx="3" opacity=".5"/></svg>',
   chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 6.5C5 5.67 5.67 5 6.5 5h11c.83 0 1.5.67 1.5 1.5v8c0 .83-.67 1.5-1.5 1.5H10l-4 3v-3h.5C5.67 16 5 15.33 5 14.5v-8Z"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg>',
   invite: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/></svg>',
@@ -168,7 +169,7 @@ function toast(text, action) {
 // a fix for common server errors, so nobody is left stranded
 function errorAction(msg) {
   if (/bankroll|balance|enough/i.test(msg) && S.view !== 'cashier') return ['Cashier', () => renderCashier('deposit')];
-  if (/Pokr Club/i.test(msg)) return ['See the club', () => renderClub()];
+  if (/Pro Pass/i.test(msg)) return ['See Pro Pass', () => renderClub()];
   return null;
 }
 // screen-to-screen transition, only when the screen actually changes
@@ -211,6 +212,7 @@ function onMessage(m) {
       const entering = S.view === 'boot' || S.view === 'auth';
       S.me = m.user;
       document.body.dataset.skin = S.me.theme || 'lounge';
+      document.body.dataset.felt = S.me.felt || 'green';
       if (entering) enterApp();
       else if (S.view === 'table') {
         if (S.rejoin) { S.rejoin = false; send({ t: 'join', code: S.table ? S.table.code : routeCode() }); }
@@ -386,7 +388,7 @@ function renderProfileEdit() {
       <h2>Your profile</h2>
       <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
         <input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>
-      <div class="field"><span class="lbl">Avatar</span>${avatarGrid(true)}<button type="button" class="textbtn" id="pf-more">More avatars in Pokr Club ›</button></div>
+      <div class="field"><span class="lbl">Avatar</span>${avatarGrid(true)}<button type="button" class="textbtn" id="pf-more">More avatars in Pro Pass ›</button></div>
       ${S.me.guest ? '' : `<div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>`}
       <button class="btn primary" type="submit">Save</button>
       <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button>${S.me.guest ? '' : '<button class="btn ghost" type="button" id="pf-logout">Log out</button>'}</div>
@@ -461,7 +463,7 @@ function tabPlay() {
         ${[['all', 'All blinds'], ...STAKES.map(([k, sb, bb]) => [k, blinds(sb, bb)])].map(([k, l]) => `<button type="button" role="radio" class="fchip ${k === 'all' ? '' : 'num'}" data-bf="${k}" aria-checked="${S.blindFilter === k}">${l}</button>`).join('')}
       </div>
       ${!S.lobby ? skelRows(3) : shown.length ? `<div class="cards">${shown.map(t => `
-        <button class="tcard" data-join="${t.code}"><span class="bl num">${blinds(t.sb, t.bb)}</span>
+        <button class="tcard" data-join="${t.code}"><span class="bl num">${blinds(t.sb, t.bb)}<small class="gtag">${t.game === 'plo' ? 'PLO' : 'Hold’em'}</small></span>
           <span class="tc-mid"><b>${esc(t.name)}</b>${dots(t.players + t.bots, t.seats)}</span>
           <span class="tc-go">Join</span></button>`).join('')}</div>`
         : S.blindFilter !== 'all' && L.tables.length ? `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No open tables at ${esc(blindLabel(S.blindFilter))}.</p><p class="sub"><button class="linkbtn" data-bf="all">Show all blinds</button> or start one in Home games.</p></div>`
@@ -484,6 +486,8 @@ function openNewTable() {
   openSheet(`
     <h2>Start a table</h2>
     <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
+    <span class="lbl">Game</span>
+    <div class="seg2 game-seg" role="radiogroup" aria-label="Game"><button type="button" role="radio" data-game="nlh" aria-checked="${S.game !== 'plo'}">No-Limit Hold’em</button><button type="button" role="radio" data-game="plo" aria-checked="${S.game === 'plo'}">Pot-Limit Omaha</button></div>
     <span class="lbl">Blinds</span>
     <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
     <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
@@ -493,7 +497,11 @@ function openNewTable() {
       document.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
     });
     $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
-    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate }); };
+    document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => {
+      S.game = b.dataset.game; buzz(4);
+      document.querySelectorAll('[data-game]').forEach(x => x.setAttribute('aria-checked', x.dataset.game === S.game));
+    });
+    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh' }); };
   });
 }
 function openJoinCode() {
@@ -582,7 +590,7 @@ function tabWallet() {
         <div class="txr"><span class="num ${t.type === 'deposit' ? 'up' : ''}">${t.type === 'deposit' ? '+' : '−'}${money(t.type === 'deposit' ? t.net : t.amount)}</span><span class="pill ${t.status}">${t.status === 'pending' ? 'On the way' : 'Done'}</span></div></div>`).join('')}</div>`
         : '<div class="empty card-empty"><p>No activity yet.</p><p class="sub">Deposits and withdrawals will show up here.</p></div>'}
     </section>
-    <button class="club-banner" id="w-club"><span><span class="lbl">${me.club && me.club.active ? 'Member' : `Pokr Club · ${money(499)}/mo`}</span><b>${me.club && me.club.active ? 'Pokr Club themes & avatars' : 'Unlock themes and avatars'}</b></span>${TICON.chev}</button>
+    <button class="club-banner" id="w-club"><span><span class="lbl">${me.club && me.club.active ? 'Member' : `Pro Pass · ${money(499)}/mo`}</span><b>${me.club && me.club.active ? 'Pro Pass themes & avatars' : 'Unlock themes and avatars'}</b></span>${TICON.chev}</button>
     ${me.canRefill ? '<button class="textbtn" id="refill">Reload play money (back to $1,000)</button>' : ''}`;
   const bind = () => {
     $('#w-dep').onclick = () => renderCashier('deposit');
@@ -617,7 +625,7 @@ function tabMe() {
       </div>
     </section>
     <div class="list">
-      <button class="lrowbtn" id="p-club"><div class="lr-txt"><b>Pokr Club & themes</b><span>${me.club && me.club.active ? 'Member · ' : ''}${esc(theme)}</span></div>${TICON.chev}</button>
+      <button class="lrowbtn" id="p-club"><div class="lr-txt"><b>Pro Pass & themes</b><span>${me.club && me.club.active ? 'Member · ' : ''}${esc(theme)}</span></div>${TICON.chev}</button>
       <button class="lrowbtn" id="p-edit2"><div class="lr-txt"><b>Name & avatar</b><span>How you show up at the table</span></div>${TICON.chev}</button>
       ${soonRow('Responsible play', 'Budgets, cool-offs and session timers')}
       ${soonRow('Accessibility', 'Four-color deck, large text, screen reader')}
@@ -642,7 +650,7 @@ function openSheet(html, after) {
   if (after) after();
 }
 
-/* ---------------- Pokr Club: themes + avatars ---------------- */
+/* ---------------- Pro Pass: themes + avatars ---------------- */
 const THEME_LOOK = {
   lounge: { wall: '#7A1520', felt: '#1A6B52', accent: '#D9A84E' },
   neon: { wall: '#1B1035', felt: '#3A1D6E', accent: '#FF4FB8' },
@@ -661,31 +669,35 @@ function renderClub() {
   const ava = i => `<span class="ava" style="--ac:${COLORS[i % 8]}">${AVATARS[i]}</span>`;
   app.innerHTML = `
   <div class="page">
-    ${pageBar('Pokr Club')}
+    ${pageBar('Pro Pass')}
     <section class="panel club-hero">
       <span class="lbl">${member ? 'You’re a member' : 'Membership'}</span>
       <div class="price"><span class="num">${money(C.club.priceCents)}</span><span>/ month</span></div>
-      <ul class="perks"><li>Three extra table themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
+      <ul class="perks"><li>Six table felts</li><li>Three app themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
       ${member
         ? `<p class="wait">Renews ${new Date(me.club.renewsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.</p><button class="textbtn" id="club-cancel">Cancel membership</button>`
-        : `<button class="btn primary" id="club-join">Join Pokr Club</button>`}
+        : `<button class="btn primary" id="club-join">Get Pro Pass</button>`}
       <p class="test">Test mode: nothing is charged yet.</p>
     </section>
     <section class="panel">
-      <h2>Table themes</h2>
+      <h2>Table felts</h2>
+      ${feltPickerHTML(me, C, member)}
+    </section>
+    <section class="panel">
+      <h2>App themes</h2>
       <div class="themes">${C.themes.map(t => {
         const look = THEME_LOOK[t.id] || THEME_LOOK.lounge;
         const using = me.theme === t.id, locked = t.club && !member;
         return `<button class="theme ${using ? 'using' : ''}" data-theme="${t.id}" ${locked ? 'data-locked="1"' : ''}>
           <span class="thumb t-${t.id}" style="--wall:${look.wall};--felt:${look.felt};--acc:${look.accent}"><span class="oval"></span></span>
           <span class="tname">${esc(t.name)}</span><span class="tblurb">${esc(t.blurb)}</span>
-          <span class="tstate">${using ? 'In use' : locked ? 'Pokr Club' : 'Use this'}</span></button>`;
+          <span class="tstate">${using ? 'In use' : locked ? 'Pro Pass' : 'Use this'}</span></button>`;
   enter();
       }).join('')}</div>
     </section>
     <section class="panel">
       <h2>Members-only avatars</h2>
-      <div class="ava-shop">${C.clubAvatars.map(i => `<div class="aitem ${member ? '' : 'locked'}">${ava(i)}<span>${member ? 'Included' : 'Pokr Club'}</span></div>`).join('')}</div>
+      <div class="ava-shop">${C.clubAvatars.map(i => `<div class="aitem ${member ? '' : 'locked'}">${ava(i)}<span>${member ? 'Included' : 'Pro Pass'}</span></div>`).join('')}</div>
       <h2 style="margin-top:6px">Avatar shop</h2>
       <div class="ava-shop">${C.shopAvatars.map(i => {
         const owned = (me.ownedAvatars || []).includes(i);
@@ -696,12 +708,29 @@ function renderClub() {
   </div>`;
   $('#pg-back').onclick = goLobby;
   const j = $('#club-join'); if (j) j.onclick = () => send({ t: 'club', action: 'join' });
-  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pokr Club?</h2><p class="wait">You’ll go back to the Black Room theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
+  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pro Pass?</h2><p class="wait">You’ll go back to the Black Room theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
   app.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
-    if (b.dataset.locked) { toast('That theme comes with Pokr Club'); return; }
+    if (b.dataset.locked) { toast('That theme comes with Pro Pass'); return; }
     send({ t: 'setTheme', theme: b.dataset.theme });
   });
   app.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => send({ t: 'buyAvatar', a: +b.dataset.buy }));
+  bindFeltPicker(app);
+}
+function feltPickerHTML(me, C, member) {
+  return `<div class="felts">${(C.felts || []).map(f => {
+    const using = (me.felt || 'green') === f.id, locked = f.club && !member;
+    return `<button class="feltopt ${using ? 'using' : ''}" data-felt="${f.id}" ${locked ? 'data-locked="1"' : ''} aria-pressed="${using}">
+      <span class="fswatch" style="--f:${f.felt};--fd:${f.deep}"></span><span class="fname">${esc(f.name)}</span>
+      <span class="fstate">${using ? 'In use' : locked ? 'Pro Pass' : 'Use'}</span></button>`;
+  }).join('')}</div>`;
+}
+function bindFeltPicker(root) {
+  root.querySelectorAll('[data-felt]').forEach(b => b.onclick = () => {
+    if (b.dataset.locked) { toast('That felt comes with Pro Pass', ['See Pro Pass', () => { closeModal(); renderClub(); }]); return; }
+    buzz(4); document.body.dataset.felt = b.dataset.felt;
+    send({ t: 'setFelt', felt: b.dataset.felt });
+    root.querySelectorAll('[data-felt]').forEach(x => { const on = x === b; x.classList.toggle('using', on); x.setAttribute('aria-pressed', on); const st = x.querySelector('.fstate'); if (st && !x.dataset.locked) st.textContent = on ? 'In use' : 'Use'; });
+  });
 }
 
 /* ---------------- Cashier ---------------- */
@@ -826,6 +855,7 @@ function openMenu() {
   const inHand = me && T.phase === 'play' && me.dealt && !me.folded;
   const items = [
     ['invite', 'Invite friends', ICON.invite],
+    ['felt', 'Table felt', ICON.felt],
     ['lobby', 'Back to lobby', ICON.lobby],
   ];
   const seated = [];
@@ -857,6 +887,10 @@ async function menuAction(k) {
     const url = location.origin + '/t/' + T.code;
     if (await copy(url)) toast('Invite link copied');
     else openModal(`<h2>Invite friends</h2><p class="wait">Send them this link:</p><input readonly value="${esc(url)}" id="inv-url"><button class="btn primary" data-close>Done</button>`, () => $('#inv-url').select());
+  } else if (k === 'felt') {
+    const C = S.catalog, member = S.me && S.me.club && S.me.club.active;
+    if (!C) return;
+    openModal(`<h2>Table felt</h2>${feltPickerHTML(S.me, C, member)}<button class="btn" data-close>Done</button>`, () => bindFeltPicker($('#modal')));
   } else if (k === 'lobby') {
     const me = T.you >= 0 ? T.seats[T.you] : null;
     if (me && T.phase === 'play' && me.dealt && !me.folded) openLeaveConfirm(); else leaveTable();
@@ -1034,16 +1068,18 @@ function renderStage() {
     else if (s.sittingOut && !s.dealt) tag = s.last === 'Busted' ? 'Busted' : 'Sitting out';
     if (!tone && tag) tone = /^fold/i.test(tag) ? 'fold' : /\ball[ -]?in\b/i.test(tag) ? 'allin' : /^(bet|raise)/i.test(tag) ? 'raise' : '';
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
-      <div class="pod">
-        ${hole ? `<div class="hole">${hole}</div>` : ''}
-        <div class="av">${avatarHTML(s.avatar, s.name)}${turn ? '<span class="ring" id="ring"></span>' : ''}${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer">D</span>' : ''}</div>
-        <div class="plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></div>
-        ${tag ? `<span class="act ${tone}">${esc(tag)}</span>` : ''}
+      <div class="np${hole ? ' has-cards' : ''} n${s.cards.length}">
+        ${hole ? `<div class="np-cards">${hole}</div>` : ''}
+        ${tag ? `<span class="np-tag ${tone}">${esc(tag)}</span>` : ''}
+        ${avatarHTML(s.avatar, s.name)}
+        <span class="np-txt"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></span>
+        ${T.dealer === i && T.phase !== 'waiting' ? '<span class="dealer" aria-label="Dealer">D</span>' : ''}
+        ${turn ? '<span class="np-timer"><i id="ring"></i></span>' : ''}
       </div>
       ${T.isHost && s.kind === 'bot' && T.phase !== 'play' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
     if (s.bet > 0) {
-      const bx = x + (50 - x) * 0.36, by = y + (48 - y) * 0.36;
+      const bx = x + (50 - x) * 0.42, by = y + (48 - y) * 0.42;
       html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bdot"></span><span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
@@ -1088,8 +1124,9 @@ function renderMine(force) {
   if (inHand) wait = me.allIn ? 'you’re all in' : 'waiting on the table…';
   else if (T.phase === 'waiting') wait = 'waiting for another player';
   const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurn ? '' : wait));
+  const nHole = me.cards.length || (T.game === 'plo' ? 4 : 2);
   let html = `<div class="hero">
-    <div class="mycards">${cards || '<div class="pc empty"></div><div class="pc empty"></div>'}</div>
+    <div class="mycards n${nHole}">${cards || '<div class="pc empty"></div>'.repeat(nHole)}</div>
     <div class="myinfo"><span class="hand">${esc(handLine)}</span>${chipNum(me.chips, 'mystack')}</div>
   </div>`;
 
@@ -1127,40 +1164,61 @@ function renderMine(force) {
   if (myTurn && S.raiseOpen) bindRaisePicker(T, A);
 }
 
-// The raise picker: a big readout, poker-chip presets, +/- steps of one big blind, and a slider.
+// The raise picker: a chip tower you drag up or down, presets beside it, and one confirm button.
+// The tower is eased (finer control near the minimum, faster toward all in) and snaps to the small blind.
+const TOWER_EASE = 1.7;
 function raiseTargets(T, A) {
   const potAfterCall = T.pot + A.toCall;
   const at = x => Math.max(A.minTo, Math.min(A.maxTo, Math.round(x / T.sb) * T.sb));
-  return [
-    ['min', 'Min', A.minTo, 'cream'],
-    ['half', '½ pot', at(A.currentBet + potAfterCall / 2), 'teal'],
-    ['3q', '¾ pot', at(A.currentBet + potAfterCall * 0.75), 'blue'],
-    ['pot', 'Pot', at(A.currentBet + potAfterCall), 'red'],
-    ['all', 'All in', A.maxTo, 'black'],
+  const list = [
+    ['min', 'Min', A.minTo],
+    ['half', '½ Pot', at(A.currentBet + potAfterCall / 2)],
+    ['3q', '¾ Pot', at(A.currentBet + potAfterCall * 0.75)],
+    ['pot', 'Pot', at(A.currentBet + potAfterCall)],
   ];
+  if (!A.potLimit) list.push(['all', 'All in', A.maxTo]);
+  return list;
 }
 function raisePickerHTML(T, A) {
   if (!S.raiseTo || S.raiseTo < A.minTo || S.raiseTo > A.maxTo) S.raiseTo = A.minTo;
   const verb = A.currentBet === 0 ? 'Bet' : 'Raise to';
-  return `<div class="picker" role="group" aria-label="${verb} amount">
-    <div class="pk-head"><button class="pk-back" id="pk-back" aria-label="Back to actions">‹ Back</button><span class="lbl">${verb}</span><span class="pk-bb" id="pk-bb"></span></div>
-    <div class="pk-amt">
-      <button class="step" id="pk-minus" aria-label="Less">−</button>
+  return `<div class="picker tower-picker" role="group" aria-label="${verb} amount">
+    <div class="tp-left">
+      <div class="pk-head"><button class="pk-back" id="pk-back" aria-label="Back to actions">‹ Back</button><span class="pk-bb" id="pk-bb"></span></div>
+      <span class="lbl">${verb}${A.potLimit ? ' · pot limit' : ''}</span>
       <span class="pk-val" id="pk-val" aria-live="polite"></span>
-      <button class="step" id="pk-plus" aria-label="More">+</button>
+      <div class="tp-presets">${raiseTargets(T, A).map(([k, l, v]) => `<button class="tp-pre" data-v="${v}"><b>${l}</b><span>${money(v)}</span></button>`).join('')}</div>
+      <button class="pk-go" id="pk-go"></button>
     </div>
-    <div class="pk-chips">${raiseTargets(T, A).map(([k, l, v, col]) => `<button class="pchip ${col}" data-v="${v}" aria-label="${l}, ${money(v)}"><span class="disc">${l}</span><span class="amt">${money(v)}</span></button>`).join('')}</div>
-    <input type="range" class="pk-slider" id="pk-slider" min="${A.minTo}" max="${A.maxTo}" step="1" value="${S.raiseTo}" aria-label="${verb} amount">
-    <button class="btn primary pk-go" id="pk-go"></button>
+    <div class="tower" id="tower" role="slider" tabindex="0" aria-label="${verb} amount" aria-valuemin="${A.minTo}" aria-valuemax="${A.maxTo}">
+      <div class="tw-track"><div class="tw-fill" id="tw-fill"></div><div class="tw-thumb" id="tw-thumb"><i></i><i></i><i></i></div></div>
+      <span class="tw-cap top">${A.potLimit ? 'Pot' : 'All in'}</span><span class="tw-cap bot">Min</span>
+    </div>
   </div>`;
 }
+const towerT = (A, v) => A.maxTo > A.minTo ? Math.pow((v - A.minTo) / (A.maxTo - A.minTo), 1 / TOWER_EASE) : 1;
 function bindRaisePicker(T, A) {
   $('#pk-back').onclick = () => { S.raiseOpen = false; renderMine(true); };
-  $('#pk-minus').onclick = () => setRaise(S.raiseTo - T.bb);
-  $('#pk-plus').onclick = () => setRaise(S.raiseTo + T.bb);
-  $('#pk-slider').oninput = e => setRaise(+e.target.value);
-  document.querySelectorAll('.pchip').forEach(b => b.onclick = () => { buzz(4); setRaise(+b.dataset.v); });
+  document.querySelectorAll('.tp-pre').forEach(b => b.onclick = () => { buzz(4); setRaise(+b.dataset.v); });
   $('#pk-go').onclick = () => { buzz(); $('#pk-go').disabled = true; send({ t: 'act', kind: 'raise', amount: S.raiseTo }); S.raiseOpen = false; };
+  const tw = $('#tower'), track = tw.querySelector('.tw-track');
+  let dragging = false, lastStep = -1;
+  const fromY = y => {
+    const r = track.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (r.bottom - y) / r.height));
+    const v = A.minTo + (A.maxTo - A.minTo) * Math.pow(t, TOWER_EASE);
+    setRaise(t >= .995 ? A.maxTo : v);
+    const step = Math.round(S.raiseTo / T.bb);
+    if (step !== lastStep) { lastStep = step; buzz(2); }
+  };
+  tw.addEventListener('pointerdown', e => { dragging = true; tw.setPointerCapture(e.pointerId); tw.classList.add('drag'); fromY(e.clientY); e.preventDefault(); });
+  tw.addEventListener('pointermove', e => { if (dragging) fromY(e.clientY); });
+  const end = () => { dragging = false; tw.classList.remove('drag'); };
+  tw.addEventListener('pointerup', end); tw.addEventListener('pointercancel', end);
+  tw.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setRaise(S.raiseTo + T.bb); e.preventDefault(); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setRaise(S.raiseTo - T.bb); e.preventDefault(); }
+  });
   setRaise(S.raiseTo);
 }
 function setRaise(v) {
@@ -1170,15 +1228,15 @@ function setRaise(v) {
   if (v < A.maxTo) v = Math.round(v / T.sb) * T.sb;
   v = Math.max(A.minTo, Math.min(A.maxTo, v));
   S.raiseTo = v;
-  const sl = $('#pk-slider'); if (sl && +sl.value !== v) sl.value = v;
+  const t = towerT(A, v);
+  const tw = $('#tower');
+  if (tw) { tw.style.setProperty('--t', t.toFixed(4)); tw.setAttribute('aria-valuenow', v); tw.setAttribute('aria-valuetext', money(v)); tw.classList.toggle('max', v === A.maxTo); }
   const val = $('#pk-val'); if (val) val.textContent = money(v);
   const bb = $('#pk-bb'); if (bb) bb.textContent = `${(v / T.bb).toFixed(v % T.bb ? 1 : 0)} BB`;
-  document.querySelectorAll('.pchip').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  document.querySelectorAll('.tp-pre').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
   const go = $('#pk-go');
-  if (go) go.textContent = v === A.maxTo ? `All in · ${money(v)}` : `${A.currentBet === 0 ? 'Bet' : 'Raise to'} ${money(v)}`;
-  const minus = $('#pk-minus'), plus = $('#pk-plus');
-  if (minus) minus.disabled = v <= A.minTo;
-  if (plus) plus.disabled = v >= A.maxTo;
+  const allIn = v === (A.allIn || A.maxTo) && !(A.potLimit && v < (A.allIn || 0));
+  if (go) go.textContent = allIn ? `All in · ${money(v)}` : `${A.currentBet === 0 ? 'Bet' : 'Raise to'} ${money(v)}`;
 }
 
 function showReaction(m) {

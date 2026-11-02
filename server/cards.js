@@ -68,11 +68,27 @@ function best(cards) {
 }
 const bestScore = cards => best(cards).score;
 
+// Omaha: the best hand using exactly two hole cards and exactly three board cards.
+function bestOmaha(hole, board) {
+  if (hole.length < 2 || board.length < 3) return null;
+  let top = -1, five = null;
+  for (let a = 0; a < hole.length; a++) for (let b = a + 1; b < hole.length; b++)
+    for (let x = 0; x < board.length; x++) for (let y = x + 1; y < board.length; y++) for (let z = y + 1; z < board.length; z++) {
+      const h = [hole[a], hole[b], board[x], board[y], board[z]];
+      const v = eval5(h);
+      if (v > top) { top = v; five = h; }
+    }
+  return { score: top, five };
+}
+// One entry point for both games.
+const bestFor = (game, hole, board) => (game === 'plo' ? bestOmaha(hole, board) : best([...hole, ...board]));
+
 // Monte Carlo win share against `opp` random hands. Only bots use this; it never sees anyone's real cards.
-function equity(hand, board, opp, iters = 240) {
+function equity(hand, board, opp, iters = 240, game = 'nlh') {
   const known = new Set([...hand, ...board]);
   const rest = [...Array(52).keys()].filter(c => !known.has(c));
-  const needB = 5 - board.length, need = needB + opp * 2;
+  const k = hand.length; // 2 in hold'em, 4 in Omaha
+  const needB = 5 - board.length, need = needB + opp * k;
   let score = 0;
   for (let t = 0; t < iters; t++) {
     for (let i = 0; i < need; i++) {
@@ -80,11 +96,11 @@ function equity(hand, board, opp, iters = 240) {
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
     const b = board.concat(rest.slice(0, needB));
-    const mine = bestScore(hand.concat(b));
+    const mine = bestFor(game, hand, b).score;
     let lost = false, ties = 0;
     for (let o = 0; o < opp; o++) {
-      const off = needB + o * 2;
-      const v = bestScore([rest[off], rest[off + 1], ...b]);
+      const off = needB + o * k;
+      const v = bestFor(game, rest.slice(off, off + k), b).score;
       if (v > mine) { lost = true; break; }
       if (v === mine) ties++;
     }
@@ -120,4 +136,4 @@ function money(c) {
   return '$' + d.toLocaleString('en-US', Number.isInteger(d) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-module.exports = { money, describe, newDeck, eval5, best, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };
+module.exports = { money, describe, newDeck, eval5, best, bestOmaha, bestFor, bestScore, catOf, handName, equity, rankOf, suitOf, cardTxt, HAND_NAMES };
