@@ -12,13 +12,13 @@ const CLUB = { priceCents: 499, period: 'month', name: 'Pro Pass' };
 
 // Table felts: classic green is free; the rest come with Pro Pass.
 const FELTS = [
-  { id: 'green', name: 'Classic Green', felt: '#1F7049', deep: '#0A3220', club: false },
-  { id: 'blue', name: 'Midnight Blue', felt: '#1C3B66', deep: '#08142A', club: true },
-  { id: 'burgundy', name: 'Burgundy', felt: '#5C1B26', deep: '#21070C', club: true },
-  { id: 'graphite', name: 'Graphite', felt: '#2E2F33', deep: '#0F1012', club: true },
-  { id: 'teal', name: 'Deep Teal', felt: '#0E5152', deep: '#03201F', club: true },
-  { id: 'purple', name: 'Royal Purple', felt: '#3D2763', deep: '#140B27', club: true },
-  { id: 'tan', name: 'Tournament Tan', felt: '#6E5638', deep: '#2B2013', club: true },
+  { id: 'green', name: 'Card Room', felt: '#1F7049', deep: '#0A3220', club: false },
+  { id: 'blue', name: 'Midnight Lounge', felt: '#1C3B66', deep: '#08142A', club: true },
+  { id: 'burgundy', name: 'Velvet Room', felt: '#5C1B26', deep: '#21070C', club: true },
+  { id: 'graphite', name: 'Concrete Loft', felt: '#2E2F33', deep: '#0F1012', club: true },
+  { id: 'teal', name: 'Shoji Room', felt: '#0E5152', deep: '#03201F', club: true },
+  { id: 'purple', name: 'Neon Club', felt: '#3D2763', deep: '#140B27', club: true },
+  { id: 'tan', name: 'Casino Floor', felt: '#6E5638', deep: '#2B2013', club: true },
 ];
 
 const THEMES = [

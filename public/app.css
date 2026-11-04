@@ -1996,3 +1996,216 @@ button, .btn, .fchip, .tab, .lrowbtn, .grow, .trow2 { touch-action: manipulation
 .fchip::after, .seg2 button::after, .seg4 button::after, .game-seg button::after, .btn.small::after { content: ""; position: absolute; inset: -5px 0; }
 .grow > svg.smap { width: 48px; height: 30px; color: inherit; stroke-width: 1; }
 .hs-oval { width: min(70%, 300px); }
+
+/* =====================================================================
+   TABLE v4 — characters on name plates, cards fanned beside them,
+   chip stacks for bets, a two-part pot. Rooms change with the theme.
+   ===================================================================== */
+#stage .seat { z-index: 3; }
+.sp2 { position: relative; display: flex; flex-direction: column; align-items: center; }
+.sp-fig { position: relative; width: 54px; height: 50px; margin-bottom: -6px; z-index: 1; }
+.por { width: 54px; height: 54px; display: block; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .55)); }
+.seat.me .sp-fig { width: 62px; height: 58px; }
+.seat.me .por { width: 62px; height: 62px; }
+.sp2 .sp-plate, .seat.turn .sp2 .sp-plate, .seat.won .sp2 .sp-plate {
+  position: relative; z-index: 2; display: flex; flex-direction: column; align-items: stretch; min-width: 86px; max-width: 104px; margin: 0; padding: 0; overflow: hidden;
+  background: #121318; border: 1.5px solid rgba(214, 220, 235, .32); border-radius: 6px; box-shadow: 0 6px 14px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .06); }
+.sp2 .sp-plate .nm { display: block; padding: 3px 8px 2px; font: 600 11.5px/1.25 var(--sans); color: #fff; text-align: center; text-shadow: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid rgba(214, 220, 235, .18); background: linear-gradient(180deg, #1D1F26, #15161B); }
+.sp2 .sp-plate .ch { display: block; padding: 2px 8px 3px; font: 650 13.5px/1.25 var(--sans); color: #F3C969; text-align: center; text-shadow: none; font-variant-numeric: tabular-nums; }
+.seat.turn .sp2 .sp-plate { border-color: #F3C969; box-shadow: 0 0 0 2px rgba(243, 201, 105, .25), 0 0 18px rgba(243, 201, 105, .35), 0 6px 14px rgba(0, 0, 0, .55); }
+.seat.won .sp2 .sp-plate { border-color: #6FE0A0; box-shadow: 0 0 18px rgba(111, 224, 160, .45), 0 6px 14px rgba(0, 0, 0, .55); }
+.seat.me .sp2 .sp-plate { min-width: 96px; }
+.sp-timer { position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--p, 1) * 100%); background: #F3C969; transition: width .25s linear; }
+.seat.folded .sp-fig, .seat.folded .sp-plate, .seat.away .sp-fig { opacity: .45; }
+.seat.folded .sp-fan { opacity: .35; }
+/* action tag */
+.sp-tag { position: absolute; bottom: calc(100% + 2px); left: 50%; translate: -50% 0; z-index: 3; padding: 2px 9px; border-radius: 6px; font: 650 11.5px/1.35 var(--sans); color: #fff; white-space: nowrap; box-shadow: 0 3px 8px rgba(0, 0, 0, .45); background: #3B6FD8; }
+.sp-tag.raise { background: #E08A2E; }
+.sp-tag.allin { background: #C8372D; }
+.sp-tag.fold { background: #4A4C55; color: #E4E4E8; }
+.sp-tag.blind { background: #2A2C33; color: #E4E4E8; border: 1px solid rgba(255, 255, 255, .2); }
+.sp-under { margin-top: 3px; font: 650 12px var(--sans); color: rgba(255, 255, 255, .75); text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
+.sp-under.win { color: #6FE0A0; }
+/* dealer button on the character */
+.sp2 .sp-badge.d { left: auto; right: -6px; bottom: 6px; width: 19px; height: 19px; font: 700 10.5px/19px var(--sans); background: #fff; color: #111; box-shadow: 0 2px 4px rgba(0, 0, 0, .5); }
+/* cards fanned beside the character */
+.sp-fan { position: absolute; top: 2px; display: flex; z-index: 0; }
+.sp2.right .sp-fan { left: calc(50% + 20px); }
+.sp2.left .sp-fan { right: calc(50% + 20px); flex-direction: row; }
+.sp-fan .pc { --w: 22px; flex: none; box-shadow: 0 3px 8px rgba(0, 0, 0, .5); }
+.sp-fan .pc + .pc { margin-left: calc(var(--w) * -.55); }
+.sp-fan.n2 .pc:nth-child(1) { rotate: -8deg; } .sp-fan.n2 .pc:nth-child(2) { rotate: 8deg; translate: 0 2px; }
+.sp-fan.n4 .pc:nth-child(1) { rotate: -15deg; translate: 0 3px; } .sp-fan.n4 .pc:nth-child(2) { rotate: -5deg; }
+.sp-fan.n4 .pc:nth-child(3) { rotate: 5deg; } .sp-fan.n4 .pc:nth-child(4) { rotate: 15deg; translate: 0 3px; }
+.sp-fan.up { top: -6px; z-index: 4; }
+.sp-fan.up .pc { --w: 30px; }
+.sp-fan.up.n4 .pc { --w: 26px; }
+.sp2.right .sp-fan.up { left: calc(50% + 10px); }
+.sp2.left .sp-fan.up { right: calc(50% + 10px); }
+/* your cards: big, beside your plate, the way you'd hold them */
+.sp-fan.myc { top: -18px; z-index: 4; }
+.sp2.right .sp-fan.myc { left: calc(50% + 46px); }
+.sp-fan.myc .pc { --w: clamp(46px, 13vw, 58px); }
+.sp-fan.myc.n4 .pc { --w: clamp(38px, 10.5vw, 48px); }
+.sp-fan.myc .pc + .pc { margin-left: calc(var(--w) * -.28); }
+/* bets: a chip stack with the amount under it */
+.bet2 { position: absolute; transform: translate(-50%, -50%); z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 1px; pointer-events: none; }
+.cstack { width: 22px; height: 21px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .45)); }
+.bet2 .amt { font: 650 12px var(--sans); color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .85); font-variant-numeric: tabular-nums; }
+/* pot: what's been collected, then the total */
+.pot2 { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 30px; }
+.pot2.ghost { visibility: hidden; }
+.p-coll { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px 2px 4px; border-radius: 999px; background: rgba(0, 0, 0, .42); }
+.p-coll .cstack { width: 18px; height: 17px; }
+.p-coll b { font: 650 12.5px var(--sans); color: #fff; font-variant-numeric: tabular-nums; }
+.p-total { display: flex; flex-direction: column; align-items: center; padding: 3px 18px 4px; border-radius: 10px; background: rgba(0, 0, 0, .5); }
+.p-total .lbl { font: 500 11px var(--sans); color: rgba(255, 255, 255, .75); }
+.p-total b { font: 700 16px/1.15 var(--sans); color: #F3C969; font-variant-numeric: tabular-nums; }
+.pot2.drain { animation: potDrain .5s ease both; }
+@media (prefers-reduced-motion: reduce) { .pot2.drain { animation: none !important; } }
+/* your hand area: just the hand name now, the cards are on the table */
+.hero.slim { min-height: 0; padding: 2px 4px 6px; }
+.hero.slim .hand { font: 600 14px var(--sans); color: rgba(255, 255, 255, .8); }
+.turnwrap .hero.slim { padding-bottom: 8px; }
+@media (min-width: 700px) {
+  .sp-fig { width: 62px; height: 58px; } .por { width: 62px; height: 62px; }
+  .seat.me .sp-fig { width: 70px; height: 66px; } .seat.me .por { width: 70px; height: 70px; }
+  .sp2 .sp-plate { min-width: 104px; max-width: 124px; }
+  .sp2 .sp-plate .nm { font-size: 12.5px; } .sp2 .sp-plate .ch { font-size: 15px; }
+  .sp-fan .pc { --w: 26px; } .sp-fan.up .pc { --w: 36px; }
+  .sp-fan.myc .pc { --w: 64px; }
+}
+
+/* ---------- rooms: each table theme is a whole room ---------- */
+body:has(.tbl) { --room-ink: rgba(0, 0, 0, .7); }
+body[data-felt=blue]:has(.tbl) { background-color: #0A1224; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 30%, rgba(0, 0, 0, .75) 100%),
+  repeating-linear-gradient(45deg, rgba(160, 190, 255, .05) 0 1px, transparent 1px 28px), repeating-linear-gradient(-45deg, rgba(160, 190, 255, .05) 0 1px, transparent 1px 28px),
+  linear-gradient(180deg, #122042, #0A1224); background-size: 100% 100%, auto, auto, 100% 100%; background-repeat: no-repeat, repeat, repeat, no-repeat; }
+body[data-felt=burgundy]:has(.tbl) { background-color: #1A070B; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 25%, rgba(0, 0, 0, .8) 100%),
+  repeating-linear-gradient(90deg, #2A0A11 0, #4A1420 22px, #5C1A28 30px, #2A0A11 52px), linear-gradient(180deg, #3A0E18, #1A070B);
+  background-size: 100% 100%, auto, 100% 100%; background-repeat: no-repeat, repeat, no-repeat; }
+body[data-felt=graphite]:has(.tbl) { background-color: #1C1D20; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 30%, rgba(0, 0, 0, .7) 100%), var(--grain),
+  repeating-linear-gradient(0deg, rgba(0, 0, 0, .35) 0 2px, transparent 2px 180px), repeating-linear-gradient(90deg, rgba(0, 0, 0, .3) 0 2px, transparent 2px 240px),
+  linear-gradient(180deg, #3A3B40, #1C1D20); background-size: 100% 100%, 180px 180px, auto, auto, 100% 100%; background-repeat: no-repeat, repeat, repeat, repeat, no-repeat; }
+body[data-felt=teal]:has(.tbl) { background-color: #1A140C; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 25%, rgba(0, 0, 0, .78) 100%),
+  repeating-linear-gradient(90deg, #3A2614 0 5px, transparent 5px 64px), repeating-linear-gradient(0deg, #3A2614 0 5px, transparent 5px 88px),
+  linear-gradient(180deg, #8A7656, #54452F); background-size: 100% 100%, auto, auto, 100% 100%; background-repeat: no-repeat, repeat, repeat, no-repeat; }
+body[data-felt=purple]:has(.tbl) { background-color: #0C0614; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 30%, rgba(0, 0, 0, .78) 100%),
+  linear-gradient(180deg, transparent 0 14%, rgba(255, 79, 184, .55) 14.2% 14.6%, transparent 14.8% 22%, rgba(79, 200, 255, .4) 22.2% 22.5%, transparent 22.7%),
+  repeating-linear-gradient(90deg, rgba(180, 120, 255, .06) 0 1px, transparent 1px 44px), linear-gradient(180deg, #24103E, #0C0614);
+  background-size: 100% 100%, 100% 100%, auto, 100% 100%; background-repeat: no-repeat, no-repeat, repeat, no-repeat; }
+body[data-felt=tan]:has(.tbl) { background-color: #2A0E10; background-image:
+  radial-gradient(120% 90% at 50% 45%, transparent 25%, rgba(0, 0, 0, .78) 100%),
+  radial-gradient(circle at 50% 50%, #C9A04A 0 3px, transparent 3.5px), radial-gradient(circle at 0 0, rgba(201, 160, 74, .55) 0 2px, transparent 2.5px),
+  repeating-conic-gradient(from 45deg, #4A1318 0 25%, #3A0E12 0 50%); background-size: 100% 100%, 36px 36px, 36px 36px, 36px 36px; background-repeat: no-repeat, repeat, repeat, repeat; }
+body[data-felt]:has(.tbl) { background-attachment: fixed; }
+/* rails and trims per room */
+body[data-felt=blue] .rail { background: var(--wood-grain), linear-gradient(160deg, #3A2A22, #1C130E 45%, #33241B 75%, #150E0A); background-size: 600px 600px, 100% 100%; }
+body[data-felt=blue] .trim { background: linear-gradient(180deg, #DCE2EA, #9BA4B0 50%, #C7CED8); }
+body[data-felt=burgundy] .rail, body[data-felt=graphite] .rail, body[data-felt=purple] .rail { background: linear-gradient(160deg, #2A2A2E, #121214 45%, #232327 75%, #0B0B0C); }
+body[data-felt=burgundy] .trim { background: linear-gradient(180deg, #E6C88A, #B08C48 50%, #D9B874); }
+body[data-felt=graphite] .trim { background: linear-gradient(180deg, #B9BDC4, #6E7279 50%, #A3A7AE); }
+body[data-felt=purple] .trim { background: linear-gradient(180deg, #C9A2FF, #7A4FC0 50%, #B48AF0); }
+body[data-felt=teal] .rail { background: var(--wood-grain), linear-gradient(160deg, #A8794A, #7A5330 45%, #9A6C40 75%, #5E3F22); background-size: 600px 600px, 100% 100%; }
+body[data-felt=teal] .trim { background: linear-gradient(180deg, #3A2614, #241709 50%, #3A2614); }
+body[data-felt=tan] .rail { background: var(--wood-grain), linear-gradient(160deg, #5A1A14, #34100B 45%, #4E1711 75%, #240A07); background-size: 600px 600px, 100% 100%; }
+body[data-felt=tan] .trim { background: linear-gradient(180deg, #F0D58E, #B8913E 50%, #E2C277); }
+/* felt swatches in Pro Pass preview the whole room */
+.feltopt[data-felt=blue] .fswatch { box-shadow: 0 0 0 4px #122042; }
+.feltopt[data-felt=burgundy] .fswatch { box-shadow: 0 0 0 4px #4A1420; }
+.feltopt[data-felt=graphite] .fswatch { box-shadow: 0 0 0 4px #3A3B40; }
+.feltopt[data-felt=teal] .fswatch { box-shadow: 0 0 0 4px #A8946C; }
+.feltopt[data-felt=purple] .fswatch { box-shadow: 0 0 0 4px #24103E; }
+.feltopt[data-felt=tan] .fswatch { box-shadow: 0 0 0 4px #4A1318; }
+.feltopt[data-felt=green] .fswatch { box-shadow: 0 0 0 4px #4A3020; }
+
+/* =====================================================================
+   TINT — every page carries a little colour from the app theme
+   ===================================================================== */
+body:not(:has(.tbl)) { background-image: radial-gradient(130% 55% at 50% -8%, var(--wash), transparent 70%); background-repeat: no-repeat; background-color: var(--velvet); background-attachment: fixed; }
+body, body[data-skin=lounge] { --velvet: #070A09; --panel: #141917; --panel-hi: #212825; --surface: #141917; --wash: rgba(31, 112, 73, .32); }
+body[data-skin=neon] { --velvet: #09060F; --panel: #17111F; --panel-hi: #241B2F; --surface: #17111F; --wash: rgba(150, 50, 200, .32); }
+body[data-skin=monaco] { --velvet: #060A12; --panel: #111823; --panel-hi: #1C2534; --surface: #111823; --wash: rgba(40, 90, 170, .34); }
+body[data-skin=zebra] { --velvet: #0D0A08; --panel: #1B1714; --panel-hi: #29231E; --surface: #1B1714; --wash: rgba(160, 110, 60, .28); }
+body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--velvet); }
+.tabbar { background: color-mix(in srgb, var(--velvet) 96%, transparent); }
+#modal .sheetish .dialog, #modal .dialog.panel { background: var(--panel); }
+.seg2, .seg4, .game-seg { background: var(--panel); }
+
+/* =====================================================================
+   PLAY TOP — live count, your blinds, a real little table
+   ===================================================================== */
+.ph-title { display: flex; flex-direction: column; min-width: 0; }
+.ph-live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px rgba(63, 192, 122, .18); flex: none; }
+.sec-sub { margin: 1px 0 0; font-size: 13px; color: var(--muted); }
+.sec.first { margin-top: 8px; }
+.hero-tables .sec-head { margin-bottom: 10px; }
+.hslide { padding: 0; overflow: hidden; background: var(--panel); border-radius: 16px; }
+.hs-felt { height: auto; margin: 0; padding: 22px 30px 26px; display: block; background: radial-gradient(90% 100% at 50% 40%, rgba(31, 112, 73, .25), transparent 70%); }
+.hs-rail { position: relative; margin: 0 auto; max-width: 300px; aspect-ratio: 2.05; border-radius: 999px; padding: 8px;
+  background: var(--wood-grain), linear-gradient(160deg, #6A4426, #3C2615 45%, #5A391F 75%, #2E1C0F); background-size: 600px 600px, 100% 100%;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .55), inset 0 1px 1px rgba(255, 220, 170, .2); }
+.hs-cloth { position: relative; width: 100%; height: 100%; border-radius: 999px; border: 3px solid #D2BB85;
+  background: radial-gradient(ellipse at 50% 42%, #2A8A5B, #1F7049 50%, #0F4A2E 100%); box-shadow: inset 0 6px 18px rgba(0, 0, 0, .4); display: grid; place-items: center; }
+.hs-mark { font: 700 15px var(--sans); color: rgba(255, 255, 255, .28); letter-spacing: -.01em; }
+.hs-rail i { position: absolute; translate: -50% -50%; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-style: normal;
+  background: #0E0F12; border: 1.5px dashed rgba(63, 192, 122, .9); box-shadow: 0 2px 5px rgba(0, 0, 0, .5); }
+.hs-rail i b { font: 600 14px/1 var(--sans); color: var(--live); }
+.hs-rail i.on { border: 2px solid #fff; background: var(--c); }
+.hs-rail i.on svg { width: 16px; height: 16px; fill: rgba(255, 255, 255, .92); }
+.hs-info { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 0 16px 16px; }
+.hs-info > div { min-width: 0; }
+.hslide h3 { margin: 0; font: 700 24px/1.15 var(--sans); letter-spacing: -.02em; }
+.hslide h3 span { font-size: 15px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+.hs-sub { display: flex; align-items: center; gap: 7px; margin: 4px 0 0; font-size: 14px; }
+.hs-last { margin: 4px 0 0; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hs-go { width: auto; flex: none; padding: 0 20px; }
+.hs-live { display: none; }
+/* seat maps in the lists: rail, felt, taken seats in colour, open seats ringed green */
+.smap { width: 52px; height: 32px; }
+.grow > svg.smap { width: 52px; height: 32px; }
+.smap .rail { fill: #5A391F; }
+.smap .felt { fill: #1F7049; }
+.smap .line { fill: none; stroke: rgba(255, 255, 255, .16); stroke-width: .8; }
+.smap circle.open { fill: #0E0F12; stroke: var(--live); stroke-width: 1.2; }
+.grow + .grow::before { left: 82px; }
+/* fixes after the first look */
+.hs-rail { width: 100%; }
+.hs-game { margin: 2px 0 0; font-size: 15px; color: var(--cream); opacity: .85; }
+.por { width: 58px; height: 77px; margin-top: -20px; }
+.sp-fig { width: 58px; height: 56px; margin-bottom: -4px; }
+.seat.me .sp-fig { width: 64px; height: 62px; } .seat.me .por { width: 64px; height: 85px; margin-top: -23px; }
+.sp2 .sp-plate { min-width: 80px; }
+/* a smaller board leaves room for the side seats */
+.board .pc { --w: clamp(38px, 10.6vw, 54px); }
+.board { gap: 4px; }
+/* side seats in the middle: cards go above the character */
+.sp2.mid .sp-fan, .sp2.mid.right .sp-fan, .sp2.mid.left .sp-fan { left: 50%; right: auto; top: auto; bottom: calc(100% - 6px); translate: -50% 0; }
+.sp2.mid .sp-tag { bottom: auto; top: calc(100% + 2px); }
+.sp2.mid .sp-fan.up { bottom: calc(100% - 2px); }
+/* your cards: beside your plate, not over the next seat */
+.sp-fan.myc { top: 4px; }
+.sp2.right .sp-fan.myc { left: calc(50% + 44px); }
+.sp-fan.myc .pc { --w: clamp(42px, 11.5vw, 54px); }
+@media (min-width: 700px) {
+  .por { width: 66px; height: 88px; margin-top: -24px; } .sp-fig { width: 66px; height: 64px; }
+  .seat.me .por { width: 74px; height: 98px; margin-top: -27px; } .seat.me .sp-fig { width: 74px; height: 72px; }
+  .sp-fan.myc .pc { --w: 60px; } .sp2.right .sp-fan.myc { left: calc(50% + 54px); }
+}
+/* the board and pot sit above centre, like a real deal, clear of the side seats */
+.felt::after { content: ""; flex: 0 0 22%; order: 99; }
+.sp2.mid .sp-fan { z-index: 2; bottom: calc(100% + 14px); }
+.sp2.mid .sp-tag { z-index: 4; }
+.board .pc { --w: clamp(36px, 10vw, 54px); }
+.sp2.mid .sp-fan, .sp2.mid.right .sp-fan, .sp2.mid.left .sp-fan { bottom: calc(100% + 16px); }
+/* the board sits in the clear band between the side seats; the mark goes under it */
+.felt::after { display: none; }
+.felt::before { content: ""; flex: 0 0 clamp(70px, 15%, 130px); order: -1; }
+.felt-mark { top: auto; bottom: 13%; translate: -50% 0; }
+.sp2 .sp-badge.d { font-size: 11px; width: 20px; height: 20px; line-height: 20px; }

@@ -538,7 +538,7 @@ class Table {
       code: this.code, name: this.name, sb: this.sb, bb: this.bb, game: this.game,
       players: this.seats.filter(s => s && s.kind === 'human').length,
       bots: this.seats.filter(s => s && s.kind === 'bot').length,
-      seats: this.seats.length, phase: this.phase, pot: this.phase === 'play' ? this.potTotal() : 0,
+      seats: this.seats.length, taken: this.seats.map(x => (x ? ((x.avatar && x.avatar.c) || 0) : -1)), phase: this.phase, pot: this.phase === 'play' ? this.potTotal() : 0,
       // a few recent plays for the lobby's live card ("Mae raises to $1.40")
       recent: this.log.filter(l => !/^(Hand #|Pre-flop|Flop|Turn|River)|joins the table|sits down|leaves the table|reloads/.test(l)).slice(-3),
     };

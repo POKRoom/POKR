@@ -144,6 +144,56 @@ function initials(name) { const w = String(name || '?').trim().split(/\s+/); ret
 function chipAvatar(av, name) {
   return `<span class="cava" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true"><b>${esc(initials(name))}</b></span>`;
 }
+// At the table everyone is a drawn character: a bust with a look picked from their name.
+// Eight looks, five skin tones, eight jacket colours. Original art, drawn in SVG.
+const SKIN = ['#F2CBA8', '#DDAA82', '#B57D57', '#8C5B3D', '#5F3D29'];
+const JACKET = ['#3D5A80', '#8E3B46', '#2F6F5E', '#6B4E9B', '#A86F2C', '#3A3D45', '#7A2E2E', '#2E5E8E'];
+const HAIR = ['#1E1712', '#3B2516', '#6B4423', '#A9742F', '#D8C3A0', '#2B2B30', '#7A2F24'];
+const DOTC = ['#E07A5F', '#E9B44C', '#3FB28C', '#5B8DEF', '#A77BDB', '#E26D9A', '#8DBF5A', '#C9A86A'];
+function hashStr(s) { let h = 2166136261; for (const ch of String(s || '?')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function portrait(av, name, cls = '') {
+  const h = hashStr(name);
+  const pick = (arr, k) => arr[(h >>> k) % arr.length];
+  const skin = pick(SKIN, 3), hair = pick(HAIR, 7), jk = JACKET[((av && av.c) || 0) % JACKET.length] || pick(JACKET, 11);
+  const look = (h >>> 15) % 8, shades = ((h >>> 19) % 5) === 0, beard = look !== 3 && ((h >>> 22) % 4) === 0;
+  const dark = 'rgba(0,0,0,.22)';
+  const body = `<path d="M5 64c1.5-13 11.5-20.5 27-20.5S57.5 51 59 64Z" fill="${jk}"/><path d="M32 43.5c-9 0-16 2.6-20.5 7.6L15 64h17Z" fill="${dark}"/><path d="M24.5 44.5 32 53l7.5-8.5c-2-.7-4.7-1-7.5-1s-5.5.3-7.5 1Z" fill="#ECE8E1"/><path d="M27 44.2 32 53l5-8.8" fill="none" stroke="${dark}" stroke-width="1.2"/>`;
+  const neck = `<rect x="27" y="35" width="10" height="11" rx="4" fill="${skin}"/><rect x="27" y="35" width="10" height="5" fill="${dark}"/>`;
+  const head = `<ellipse cx="32" cy="27" rx="12.5" ry="13.5" fill="${skin}"/><path d="M38 14.6c4.4 2.2 6.5 6.7 6.5 12.4S42.4 37.2 38 39.4c2.6-3 3.6-7.4 3.6-12.4S40.6 17.6 38 14.6Z" fill="${dark}"/><ellipse cx="19.6" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/><ellipse cx="44.4" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/>`;
+  const face = shades
+    ? `<rect x="21" y="24.5" width="22" height="6.5" rx="3.2" fill="#111"/><path d="M23 26h5" stroke="#fff" stroke-opacity=".5" stroke-width="1.2" stroke-linecap="round"/>`
+    : `<path d="M24.5 23.4q3-1.6 5.5 0M34 23.4q2.6-1.6 5.5 0" stroke="${hair}" stroke-width="1.6" fill="none" stroke-linecap="round"/><ellipse cx="27.4" cy="27.6" rx="1.6" ry="2" fill="#1B1512"/><ellipse cx="36.6" cy="27.6" rx="1.6" ry="2" fill="#1B1512"/><circle cx="27.9" cy="27" r=".5" fill="#fff"/><circle cx="37.1" cy="27" r=".5" fill="#fff"/>`;
+  const mouth = `<path d="M28.6 33.6q3.4 2.2 6.8 0" stroke="#6E3B2A" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
+  const beardP = beard ? `<path d="M19.8 29c.8 9.4 6 13.3 12.2 13.3S43.4 38.4 44.2 29c-2.6 4.2-6.4 5.6-12.2 5.6S22.4 33.2 19.8 29Z" fill="${hair}"/><path d="M28.6 34q3.4 1.8 6.8 0" stroke="#000" stroke-opacity=".35" stroke-width="1.3" fill="none" stroke-linecap="round"/>` : '';
+  const shortHair = `<path d="M19.4 27c-.6-10 5.4-15.4 12.6-15.4S45.2 17 44.6 27c-1.8-5.4-5.6-8.6-12.6-8.6S21.2 21.6 19.4 27Z" fill="${hair}"/>`;
+  let back = '', top = '', faceOverride = '';
+  if (look === 0) top = shortHair;
+  else if (look === 1) { const c = pick(JACKET, 5); top = `<path d="M19 24.5c0-8.4 6-13 13-13s13 4.6 13 13Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${dark}"/><circle cx="32" cy="11.6" r="1.5" fill="${dark}"/>`; }
+  else if (look === 2) { const c = pick(DOTC, 5); top = `<path d="M18.6 25.5c0-9.2 6-14.6 13.4-14.6s13.4 5.4 13.4 14.6Z" fill="${c}"/><path d="M22 15v9M26 12.6v11.4M30 11.4V24M34 11.4V24M38 12.6v11.4M42 15v9" stroke="${dark}" stroke-width="1"/><rect x="17.6" y="21.6" width="28.8" height="5.4" rx="2.7" fill="${c}"/><rect x="17.6" y="21.6" width="28.8" height="5.4" rx="2.7" fill="${dark}"/><circle cx="32" cy="9.6" r="3.2" fill="${c}"/>`; }
+  else if (look === 3) {
+    // the hood: a dark face and two bright eyes
+    back = `<path d="M13 42c-3-19 5.6-32 19-32s22 13 19 32c-4.4 3.6-11 5.4-19 5.4S17.4 45.6 13 42Z" fill="${jk}"/><path d="M13 42c-3-19 5.6-32 19-32 -9 3-14 15-12.6 33Z" fill="${dark}"/>`;
+    faceOverride = `<ellipse cx="32" cy="29" rx="10.4" ry="11.6" fill="#0E0E12"/><path d="M24.6 27.4l5.4 1.6-5 1.2Z M39.4 27.4l-5.4 1.6 5 1.2Z" fill="${pick(['#FFFFFF', '#7FE3FF', '#FFD36B', '#FF7A7A'], 9)}"/>`;
+  }
+  else if (look === 4) top = `${shortHair}<rect x="21.5" y="1.5" width="21" height="15" rx="2" fill="#16161A"/><rect x="21.5" y="11" width="21" height="2.8" fill="${pick(DOTC, 9)}"/><rect x="16" y="14.6" width="32" height="3.6" rx="1.8" fill="#16161A"/>`;
+  else if (look === 5) { const c = pick(DOTC, 9); top = `${shortHair}<path d="M17.4 28a14.6 14.6 0 0 1 29.2 0" stroke="#1E1E22" stroke-width="2.8" fill="none"/><rect x="14.4" y="24" width="6.6" height="11" rx="3.3" fill="${c}"/><rect x="43" y="24" width="6.6" height="11" rx="3.3" fill="${c}"/>`; }
+  else if (look === 6) { back = `<path d="M18.2 31c-1.2-13.4 5-20 13.8-20s15 6.6 13.8 20l1.4 13H16.8Z" fill="${hair}"/>`; top = `<path d="M19.4 26c0-9.6 5.6-14.6 12.6-14.6S44.6 16.4 44.6 26c-3-5.6-8-7.4-13.6-6.8-4.6.5-8.6 2.8-11.6 6.8Z" fill="${hair}"/>`; }
+  else top = `${shortHair}<circle cx="32" cy="10.2" r="5.2" fill="${hair}"/>`;
+  const faceBits = faceOverride || `${face}${mouth}${beardP}`;
+  return `<svg class="por ${cls}" viewBox="9 3 46 61" aria-hidden="true">${back}${body}${neck}${head}${faceBits}${top}</svg>`;
+}
+// A short stack of chips for a bet: more chips and a richer colour for bigger bets.
+function chipStack(amount, bb) {
+  const r = bb ? amount / bb : 1;
+  const col = r < 1 ? '#E8E4DC' : r < 5 ? '#C8372D' : r < 25 ? '#2F8F5B' : r < 100 ? '#2A2A30' : '#7B4FC0';
+  const n = Math.max(1, Math.min(4, Math.ceil(Math.log2(r + 1))));
+  let g = '';
+  for (let i = 0; i < n; i++) {
+    const y = 15 - i * 3.4;
+    g += `<g><ellipse cx="11" cy="${y + 1.6}" rx="9" ry="3.4" fill="#000" opacity=".35"/><ellipse cx="11" cy="${y}" rx="9" ry="3.4" fill="${col}"/><path d="M2 ${y}v1.4c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4V${y}" fill="${col}"/><path d="M2 ${y}v1.4c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4V${y}" fill="#000" opacity=".25"/><path d="M5 ${y + 2.2}v1.2M11 ${y + 3}v1.3M17 ${y + 2.2}v1.2" stroke="#fff" stroke-width="1.3" opacity=".85"/><ellipse cx="11" cy="${y}" rx="5.4" ry="1.9" fill="none" stroke="#fff" stroke-width=".8" stroke-dasharray="1.6 1.4" opacity=".7"/></g>`;
+  }
+  return `<svg class="cstack" viewBox="0 0 22 21" aria-hidden="true">${g}</svg>`;
+}
 function avatarHTML(av, name) {
   if (name) return `<span class="ava mono" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true">${esc(initials(name))}</span>`;
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
@@ -213,7 +263,7 @@ function onMessage(m) {
     case 'authError': showAuthError(m.message); break;
     case 'catalog': S.catalog = m.catalog; break;
     case 'notice': toast(m.message); break;
-    case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'play') renderTabs(); break;
+    case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'tourneys') renderTabs(); break;
     case 'tourney': if (!S.tourView || m.d.id === S.tourView) { S.tour = m.d; if (S.view === 'tourney') renderTourney(m.d.id, true); } break;
     case 'tourneyHosted': renderTourney(m.id); break;
     case 'moved': { const T = S.table; nav('/t/' + m.code); toast(T && T.code !== m.code ? 'You’ve been moved to a new table' : 'Your seat is ready'); break; }
@@ -429,12 +479,13 @@ const TICON = {
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="3" y="6" width="18" height="13" rx="3"/><path d="M3 9.5h18M16 14h2"/></svg>',
   me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle class="f" cx="12" cy="8.5" r="4"/><path class="f" d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6Z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  tourneys: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path class="f" d="M7 4h10v5a5 5 0 0 1-10 0Z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.4M17 6h2.5a2.5 2.5 0 0 1-2.6 3.4M12 14v3.5M8.5 20h7M9.5 17.5h5v2.5h-5Z"/></svg>',
   key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/></svg>',
   chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
 };
 const suitIcon = i => `<svg viewBox="0 0 24 24" class="suit"><g class="f" fill="currentColor">${SUIT_SVG[i]}</g></svg>`;
 TICON.play = suitIcon(0); TICON.games = suitIcon(1); TICON.social = suitIcon(3); TICON.wallet = suitIcon(2);
-const TABS = [['play', 'Play'], ['games', 'Home games'], ['plus', ''], ['social', 'Social'], ['me', 'Profile']];
+const TABS = [['play', 'Play'], ['games', 'Home games'], ['tourneys', 'Tournaments'], ['social', 'Social'], ['me', 'Profile']];
 
 function renderTabs() {
   S.view = 'tabs';
@@ -444,16 +495,15 @@ function renderTabs() {
   const same = S.lastTab === S.tab && S.lastPainted === 'tabs';
   const y = same ? window.scrollY : 0;
   const keepX = ['#hs-track', '.gscroll'].map(q => { const e = document.querySelector(q); return e ? e.scrollLeft : 0; });
-  const body = { play: tabPlay, games: tabGames, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
+  const body = { play: tabPlay, games: tabGames, tourneys: tabTourneys, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
-      ${TABS.map(([k, l]) => k === 'plus' ? `<button class="tab tplus" id="nav-plus" aria-label="Start or join a table"><span>${TICON.plus}</span></button>` : `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
   window.scrollTo(0, y);
   app.querySelectorAll('.tabbar [data-tab]').forEach(b => b.onclick = () => { if (S.tab === b.dataset.tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; } S.tab = b.dataset.tab; renderTabs(); });
-  $('#nav-plus').onclick = () => { buzz(6); openPlusSheet(); };
   ['#hs-track', '.gscroll'].forEach((q, i) => { const e = document.querySelector(q); if (e && keepX[i]) e.scrollLeft = keepX[i]; });
   if (body.bind) body.bind();
 }
@@ -482,18 +532,25 @@ function tourMine(t) {
   if (me.status === 'busted') return `<span class="tmine">${ordinal(me.place)}${me.prize ? ' · ' + money(me.prize) : ''}</span>`;
   return '';
 }
-function tourneysSection() {
-  const list = (S.tourneys || []).filter(t => t.status !== 'canceled');
-  if (!list.length) return '';
+function tourRows(list) {
   const pool = t => t.guarantee && t.prizePool < t.guarantee ? `${money(t.guarantee)} GTD` : `${money(t.prizePool)} pool`;
-  return `<section class="sec">
-    <div class="sec-head"><h2 class="sec-title">Tournaments</h2><button class="textbtn" id="host-t">Host one</button></div>
-    <div class="glist">${list.map(t => `
+  return `<div class="glist">${list.map(t => `
       <button class="trow2 ${t.status}" data-tour="${t.id}">
         <span class="gr-main"><b>${esc(t.name)}${tourMine(t)}</b><span>${tourStatus(t)}</span><span>${GAME_SHORT(t.game)} · ${t.speedName} · ${t.seatsPerTable}-max${t.reentries ? ' · Re-entry' : ''}</span></span>
         <span class="tr2-side"><b class="num">${t.buyIn ? money(t.buyIn) : 'Free'}</b><span class="num">${pool(t)}</span></span>${TICON.chev}
-      </button>`).join('')}</div>
-  </section>`;
+      </button>`).join('')}</div>`;
+}
+function tabTourneys() {
+  const all = (S.tourneys || []).filter(t => t.status !== 'canceled');
+  const series = all.filter(t => t.series), hosted = all.filter(t => !t.series);
+  const html = `
+    ${largeTitle('Tournaments', '<button class="btn small" id="host-t">Host one</button>')}
+    <p class="lead">Register for one and we’ll seat you when it starts. Last one standing takes the top prize.</p>
+    ${!S.tourneys ? skelRows(3) : ''}
+    ${series.length ? `<section class="sec first"><div class="sec-head"><h2 class="sec-title">Pokr Championship Series</h2></div>${tourRows(series)}</section>` : ''}
+    <section class="sec"><div class="sec-head"><h2 class="sec-title">Hosted by friends</h2></div>
+      ${hosted.length ? tourRows(hosted) : '<div class="empty card-empty"><p>No private tournaments right now.</p><p class="sub">Host one, then send your friends the code.</p></div>'}</section>`;
+  return { html, bind: bindTourneysSection };
 }
 function bindTourneysSection() {
   app.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
@@ -608,18 +665,29 @@ function seatRing(filled, seats) {
   const r = 15, C = 2 * Math.PI * r, f = seats ? filled / seats : 0;
   return `<span class="sring" aria-label="${filled} of ${seats} seats taken"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="${r}" class="sr-bg"/><circle cx="18" cy="18" r="${r}" class="sr-fg" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}"/></svg><span class="sr-txt"><b>${filled}/${seats}</b><i>seats</i></span></span>`;
 }
-// The table itself, small: a felt stadium with one dot per seat, filled where someone sits.
-function seatMap(filled, seats) {
-  const dots = Array.from({ length: seats }, (_, i) => {
+// The blinds you've sat at most recently, newest first.
+function recentBlinds() { try { return JSON.parse(store.get('pokr.recentBlinds') || '[]'); } catch { return []; } }
+function noteBlinds(game, sb, bb) {
+  const k = `${game || 'nlh'}|${sb}|${bb}`, r = recentBlinds();
+  if (r[0] === k) return;
+  store.set('pokr.recentBlinds', JSON.stringify([k, ...r.filter(x => x !== k)].slice(0, 4)));
+}
+const blindKey = t => `${t.game || 'nlh'}|${t.sb}|${t.bb}`;
+// The table itself, small: a wood rail, the felt, and every seat — taken seats in the player's colour, open ones as a green ring.
+function seatMap(filled, seats, taken) {
+  const list = taken && taken.length === seats ? taken : Array.from({ length: seats }, (_, i) => (i < filled ? i : -1));
+  const dots = list.map((c, i) => {
     const a = Math.PI / 2 + (i / seats) * Math.PI * 2;
-    return `<circle cx="${(24 + 18 * Math.cos(a)).toFixed(2)}" cy="${(15 + 10.5 * Math.sin(a)).toFixed(2)}" r="2.4" class="${i < filled ? 'on' : ''}"/>`;
+    const cx = (26 + 20 * Math.cos(a)).toFixed(2), cy = (16 + 11.6 * Math.sin(a)).toFixed(2);
+    return c >= 0 ? `<circle cx="${cx}" cy="${cy}" r="3.1" fill="${DOTC[c % DOTC.length]}" stroke="#fff" stroke-width="1"/>`
+      : `<circle cx="${cx}" cy="${cy}" r="2.7" class="open"/>`;
   }).join('');
-  return `<svg class="smap" viewBox="0 0 48 30" role="img" aria-label="${filled} of ${seats} seats taken"><rect x="10" y="8" width="28" height="14" rx="7"/>${dots}</svg>`;
+  return `<svg class="smap" viewBox="0 0 52 32" role="img" aria-label="${filled} of ${seats} seats taken"><rect x="10" y="7.5" width="32" height="17" rx="8.5" class="rail"/><rect x="12" y="9.5" width="28" height="13" rx="6.5" class="felt"/><rect x="15" y="12" width="22" height="8" rx="4" class="line"/>${dots}</svg>`;
 }
 // One table as a list row: the seat map, the game and blinds, and how many seats are open.
 function tableRow(t) {
   const n = t.players + t.bots, open = t.seats - n;
-  return `<button class="grow" data-join="${t.code}">${seatMap(n, t.seats)}
+  return `<button class="grow" data-join="${t.code}">${seatMap(n, t.seats, t.taken)}
     <span class="gr-main"><b>${GAME_SHORT(t.game)} <span class="num">${blinds(t.sb, t.bb)}</span></b><span>${t.seats}-max · ${n ? `${n} playing` : 'Empty'}</span></span>
     <span class="gr-side num ${open ? '' : 'full'}">${open ? `${open} open` : 'Full'}</span>${TICON.chev}</button>`;
 }
@@ -651,34 +719,47 @@ function tabPlay() {
   const me = S.me, L = S.lobby || { tables: [] };
   const seated = Object.entries(me.atTablesBy || {});
   const list = filteredTables();
-  const featured = [...(L.tables || [])].filter(t => t.players + t.bots < t.seats).sort((a, b) => (b.players * 3 + b.bots) - (a.players * 3 + a.bots)).slice(0, 5);
-  const ovalSeats = t => Array.from({ length: t.seats }, (_, i) => {
-    const a = Math.PI / 2 + (i / t.seats) * Math.PI * 2;
-    return `<i class="${i < t.players + t.bots ? 'on' : ''}" style="left:${(50 + 44 * Math.cos(a)).toFixed(1)}%;top:${(50 + 40 * Math.sin(a)).toFixed(1)}%"></i>`;
-  }).join('');
-  const heroSlide = t => `<article class="hslide">
-      <div class="hs-felt"><div class="hs-oval">${ovalSeats(t)}</div>
-        <div class="hs-live">${(t.recent && t.recent.length ? t.recent.slice(-2) : [t.players + t.bots ? `${t.players + t.bots} seated · ${t.seats - t.players - t.bots} open` : 'Waiting for players']).map(l => `<span>${esc(l)}</span>`).join('')}
-</div></div>
-      <h3>${GAME_LONG(t.game)}</h3>
-      <p class="hs-sub">${blinds(t.sb, t.bb)} · ${t.seats}-max</p>
-      <button class="btn primary hs-go" data-join="${t.code}">Join now</button>
+  const open = t => t.players + t.bots < t.seats;
+  const recent = recentBlinds();
+  const mine = recent.length ? (L.tables || []).filter(t => open(t) && recent.includes(blindKey(t))).sort((a, b) => recent.indexOf(blindKey(a)) - recent.indexOf(blindKey(b)) || (b.players + b.bots) - (a.players + a.bots)) : [];
+  const featured = (mine.length ? mine : [...(L.tables || [])].filter(open).sort((a, b) => (b.players * 3 + b.bots) - (a.players * 3 + a.bots))).slice(0, 5);
+  const heroTitle = mine.length ? 'Your blinds' : 'Popular now';
+  const heroSub = mine.length ? 'Tables at the stakes you’ve been playing' : 'The busiest tables with a seat open';
+  const ovalSeats = t => {
+    const taken = t.taken && t.taken.length === t.seats ? t.taken : Array.from({ length: t.seats }, (_, i) => (i < t.players + t.bots ? i : -1));
+    return taken.map((c, i) => {
+      const a = Math.PI / 2 + (i / t.seats) * Math.PI * 2;
+      const pos = `left:${(50 + 47 * Math.cos(a)).toFixed(1)}%;top:${(50 + 46 * Math.sin(a)).toFixed(1)}%`;
+      return c >= 0 ? `<i class="on" style="${pos};--c:${DOTC[c % DOTC.length]}"><svg viewBox="0 0 20 20"><circle cx="10" cy="7.4" r="3.4"/><path d="M3.6 17.4c.8-3.8 3.4-5.6 6.4-5.6s5.6 1.8 6.4 5.6Z"/></svg></i>` : `<i style="${pos}"><b>+</b></i>`;
+    }).join('');
+  };
+  const heroSlide = t => {
+    const n = t.players + t.bots;
+    return `<article class="hslide">
+      <div class="hs-felt"><div class="hs-rail"><div class="hs-cloth"><span class="hs-mark">${blinds(t.sb, t.bb)}</span></div>${ovalSeats(t)}</div></div>
+      <div class="hs-info"><div><h3>${blinds(t.sb, t.bb)}</h3>
+        <p class="hs-game">${GAME_LONG(t.game)} · ${t.seats}-max</p>
+        <p class="hs-sub"><span class="live-dot"></span>${n} seated · ${t.seats - n} open</p>
+        ${t.recent && t.recent.length ? `<p class="hs-last">${esc(t.recent[t.recent.length - 1])}</p>` : ''}</div>
+      <button class="btn primary hs-go" data-join="${t.code}">Sit down</button></div>
     </article>`;
+  };
+  const totals = (L.tables || []).reduce((a, t) => [a[0] + t.players + t.bots, a[1] + 1], [0, 0]);
   const html = `
     <header class="phead">
       <button class="ph-me" id="to-me" aria-label="Your profile">${avatarHTML(me.avatar, me.name)}</button>
-      <h1>Play</h1>
+      <div class="ph-title"><h1>Play</h1>${S.lobby ? `<span class="ph-live"><span class="live-dot"></span>${totals[0]} playing at ${totals[1]} tables</span>` : ''}</div>
       <button class="bal-chip" id="to-wallet" aria-label="Wallet balance ${money(me.bankroll)}">${chipNum(me.bankroll)}<span class="bc-plus" aria-hidden="true">+</span></button>
     </header>
     ${seated.length ? `<div class="seated">${seated.map(([code, amt]) => `<button class="seated-row" data-back="${esc(code)}"><span class="pulse"></span><span>You’re seated at <b>${esc(code)}</b> with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
-    <section class="hero-tables" aria-label="Featured tables">
+    <section class="hero-tables" aria-label="${heroTitle}">
+      <div class="sec-head"><div><h2 class="sec-title">${heroTitle}</h2><p class="sec-sub">${heroSub}</p></div></div>
       <div class="hs-track" id="hs-track">${!S.lobby ? '<article class="hslide skel"></article>' : featured.length ? featured.map(heroSlide).join('') : `<article class="hslide empty-hero">
         <div class="hs-felt"><div class="hs-oval"></div><div class="hs-live"><span>No one’s at a table yet</span></div></div>
         <h3>Start the first table</h3><p class="hs-sub">Pick a game, send your friends the code</p>
         <button class="btn primary hs-go" id="hero-new">Start a table</button></article>`}</div>
       ${featured.length > 1 ? `<div class="hs-dots" id="hs-dots">${featured.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
     </section>
-    ${tourneysSection()}
     <section class="sec">
       <div class="sec-head"><button class="sec-link" id="view-all"><h2>Active games</h2><span aria-hidden="true">›</span></button>${S.lobby ? `<button class="textbtn" id="view-all2">View all</button>` : ''}</div>
       ${gameChips()}
@@ -911,14 +992,14 @@ function renderClub() {
     <section class="panel club-hero">
       <span class="lbl">${member ? 'You’re a member' : 'Membership'}</span>
       <div class="price"><span class="num">${money(C.club.priceCents)}</span><span>/ month</span></div>
-      <ul class="perks"><li>Six table felts</li><li>Three app themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
+      <ul class="perks"><li>Six table rooms, each with its own felt and walls</li><li>Three app themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
       ${member
         ? `<p class="wait">Renews ${new Date(me.club.renewsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.</p><button class="textbtn" id="club-cancel">Cancel membership</button>`
         : `<button class="btn primary" id="club-join">Get Pro Pass</button>`}
       <p class="test">Test mode: nothing is charged yet.</p>
     </section>
     <section class="panel">
-      <h2>Table felts</h2>
+      <h2>Table rooms</h2>
       ${feltPickerHTML(me, C, member)}
     </section>
     <section class="panel">
@@ -1244,9 +1325,12 @@ function bestSet(T) {
 // go clockwise around the rail, spaced evenly along the oval and kept inside the screen.
 function seatPos(n, k, wide) {
   const cx = 50, cy = wide ? 49 : 49, rx = wide ? 43 : 37.5, ry = wide ? 42 : 44.5;
-  const a = Math.PI / 2 + (k / n) * Math.PI * 2;  // start at the bottom, go clockwise
+  // Start at the bottom and go clockwise. Your seat at the bottom gets a wider gap
+  // so your cards have room beside you, the way a real card room seats it.
+  const gap = n >= 5 ? ((wide ? 112 : 130) * Math.PI) / 180 : (Math.PI * 2) / n;
+  const a = k === 0 ? Math.PI / 2 : Math.PI / 2 + gap / 2 + ((k - 1) * (Math.PI * 2 - gap)) / Math.max(1, n - 2);
   let x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a);
-  x = Math.max(wide ? 8 : 14, Math.min(wide ? 92 : 86, x));
+  x = Math.max(wide ? 8 : 10.5, Math.min(wide ? 92 : 89.5, x));
   y = Math.max(4, Math.min(94, y));
   return [x, y];
 }
@@ -1258,6 +1342,7 @@ function renderStage() {
   const n = T.seats.length, base = T.you >= 0 ? T.you : 0;
   const hi = bestSet(T);
   const meSeated = T.you >= 0;
+  if (meSeated && !T.tourney) noteBlinds(T.game, T.sb, T.bb);
   const now0 = performance.now();
   // Showdown choreography, timed once per hand so re-renders don't restart it:
   // opponents' cards flip one player at a time, then the banner, then the chips fly to the winner.
@@ -1304,7 +1389,8 @@ function renderStage() {
     if (c === undefined && T.board.length >= 3) return cardHTML(null, 'waiting');
     return cardHTML(c === undefined ? undefined : c, cls, anim ? `animation-delay:${Math.round(t0 - now)}ms` : '');
   }).join('');
-  const potPill = T.pot ? `<div class="pot ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}><span class="lbl">Total pot</span>${chipNum(T.pot)}</div>` : '<div class="pot ghost" aria-hidden="true"></div>';
+  const onTable = T.seats.reduce((a, s) => a + (s ? s.bet || 0 : 0), 0), collected = T.pot - onTable;
+  const potPill = T.pot ? `<div class="pot2 ${result ? 'drain' : ''}"${result ? ` style="animation-delay:${Math.round(S.bannerAt + 350 - now0)}ms"` : ''}>${collected > 0 && onTable > 0 ? `<span class="p-coll">${chipStack(collected, T.bb)}<b>${fmt(collected)}</b></span>` : ''}<span class="p-total"><span class="lbl">Total pot</span><b>${fmt(T.pot)}</b></span></div>` : '<div class="pot2 ghost" aria-hidden="true"></div>';
   let html = `<div class="rail"><div class="trim"><div class="felt">
     <div class="felt-line" aria-hidden="true"></div>
     <div class="felt-mark" aria-hidden="true"><span class="logo">${LOGO}</span><span class="fm-game">${GAME_SHORT(T.game)}</span><span class="fm-bl">${T.tourney ? `${fmt(T.sb)}/${fmt(T.bb)}` : blinds(T.sb, T.bb)}</span></div>
@@ -1341,32 +1427,44 @@ function renderStage() {
       const anim = !shown && t0 && performance.now() - t0 < 500;
       return cardHTML(c, (hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - performance.now())}ms` : '');
     }).join('');
-    // What they just did goes in a speech bubble; blinds become SB/BB badges; results sit under the plate.
-    let bubble = '', btone = '', under = '', utone = '', badge = '';
+    // What they just did is a small tag above them; results sit under the plate.
+    let tag = '', ttone = '', under = '', utone = '';
     const last = s.last || '';
-    if (/^small blind/i.test(last)) badge = 'SB';
-    else if (/^big blind/i.test(last)) badge = 'BB';
-    else if (/^fold/i.test(last) || s.folded) { /* dimmed seat says it */ }
-    else if (last && T.phase === 'play' && !turn) { bubble = last; btone = /\ball[ -]?in\b/i.test(last) ? 'allin' : /^(bet|raise)/i.test(last) ? 'raise' : ''; }
-    if (won) { under = `Won ${fmt(s.won)}`; utone = 'win'; }
-    else if (!s.connected) { under = 'Away'; utone = 'fold'; }
-    else if (s.sittingOut && !s.dealt) { under = last === 'Busted' ? 'Busted' : 'Sitting out'; utone = 'fold'; }
+    if (/^small blind/i.test(last)) { tag = 'SB'; ttone = 'blind'; }
+    else if (/^big blind/i.test(last)) { tag = 'BB'; ttone = 'blind'; }
+    else if (s.folded && T.phase === 'play') { tag = 'Fold'; ttone = 'fold'; }
+    else if (last && T.phase === 'play' && !turn) {
+      const allin = /\ball[ -]?in\b/i.test(last);
+      tag = allin ? 'All in' : last.split(/\s+/)[0].replace(/s$/, '').replace(/^\w/, c => c.toUpperCase());
+      ttone = allin ? 'allin' : /^(bet|raise)/i.test(last) ? 'raise' : 'call';
+    }
+    if (won) { under = `+${fmt(s.won)}`; utone = 'win'; }
+    else if (!s.connected) { under = 'Away'; utone = 'away'; }
+    else if (s.sittingOut && !s.dealt) { under = last === 'Busted' ? 'Busted' : 'Sitting out'; utone = 'away'; }
     const dealerHere = T.dealer === i && T.phase !== 'waiting';
+    // Cards sit beside the plate: backs while they're in the hand, faces at showdown, yours face up.
+    let fan = '';
+    if (isMe && s.cards.length) {
+      fan = s.cards.map((c, j) => {
+        const t0 = S.dealAt ? S.dealAt + j * 120 : 0;
+        const anim = t0 && now0 - t0 < 500;
+        return cardHTML(c, (hi && c !== null ? (hi.has(c) ? 'hi' : 'dim') : '') + (anim ? ' deal' : ''), anim ? `animation-delay:${Math.round(t0 - now0)}ms` : '');
+      }).join('');
+    } else if (!isMe && s.cards.length && (shown || (!s.folded && T.phase === 'play'))) fan = hole;
+    const side = (isMe ? 'right' : x < 50 ? 'right' : 'left') + (!isMe && Math.abs(y - 48) < 16 ? ' mid' : '');
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
-      <div class="sp n${s.cards.length} ${x < 50 ? 'left' : 'right'}">
-        <div class="sp-top">
-          ${shown ? `<div class="sp-cards">${hole}</div>` : ''}
-          ${chipAvatar(s.avatar, s.name)}
-          ${turn ? '<span class="sp-ring" id="ring"></span>' : ''}
-          ${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}
-        </div>
-        <div class="sp-plate"><span class="nm">${isMe ? 'You' : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span></div>
+      <div class="sp2 ${side}">
+        ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
+        <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
+        <div class="sp-plate"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
+        ${under ? `<span class="sp-under ${utone}">${under}</span>` : ''}
+        ${fan ? `<div class="sp-fan n${s.cards.length} ${shown ? 'up' : ''} ${isMe ? 'myc' : ''}">${fan}</div>` : ''}
       </div>
       ${T.isHost && s.kind === 'bot' && T.phase === 'waiting' ? `<button class="kick" data-kick="${i}" aria-label="Remove ${esc(s.name)}">×</button>` : ''}
     </div>`;
     if (s.bet > 0) {
-      const bx = x + (50 - x) * 0.42, by = y + (48 - y) * 0.42;
-      html += `<div class="bet" style="left:${bx}%;top:${by}%"><span class="bchip" aria-hidden="true"></span><span class="amt">${fmt(s.bet)}</span></div>`;
+      const bx = x + (50 - x) * 0.4, by = y + (46 - y) * 0.4;
+      html += `<div class="bet2" style="left:${bx}%;top:${by}%">${chipStack(s.bet, T.bb)}<span class="amt">${fmt(s.bet)}</span></div>`;
     }
   }
   stage.className = 'stage n' + n;
@@ -1393,7 +1491,7 @@ function winBanner(T, now) {
 // Chips slide from the pot to each winner's seat, then the seat flashes the amount won.
 function flyChips(winners) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const pot = document.querySelector('#stage .pot');
+  const pot = document.querySelector('#stage .p-total') || document.querySelector('#stage .pot2');
   if (!pot || S.view !== 'table') return;
   const p = pot.getBoundingClientRect();
   const from = { x: p.left + p.width / 2, y: p.top + p.height / 2 };
@@ -1474,10 +1572,7 @@ function renderMine(force) {
   else if (T.phase === 'waiting') wait = 'waiting for another player';
   const handLine = me.folded && T.phase === 'play' ? 'folded' : (T.myHand || (myTurn ? '' : wait));
   const nHole = me.cards.length || (T.game === 'plo' ? 4 : 2);
-  const hero = `<div class="hero">
-    <div class="mycards n${nHole}">${cards || '<div class="pc empty"></div>'.repeat(nHole)}</div>
-    <div class="myinfo"><span class="hand">${esc(handLine)}</span>${chipNum(me.chips, 'mystack')}</div>
-  </div>`;
+  const hero = `<div class="hero slim"><span class="hand">${esc(handLine)}</span></div>`;
   let html = hero;
 
   if (myTurn) {
