@@ -31,10 +31,10 @@ const html = `<title>Pokr Preview</title>
 <style>
 ${css}
 :root { --chrome: 46px; } .tbl { min-height: calc(100dvh - var(--chrome)); }
-.preview-bar { max-width: 1180px; margin: 10px auto 0; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); text-align: center; }
-.preview-bar b { color: var(--brass); font-weight: 600; }
+.preview-bar { max-width: 1180px; margin: 8px auto 0; font: 500 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: rgba(235,235,245,.6); text-align: center; }
+.preview-bar b { color: rgba(235,235,245,.7); font-weight: 600; }
 </style>
-<div class="preview-bar"><b>PREVIEW</b> · You’re playing bots. Friends can join once Pokr is online.</div>
+<div class="preview-bar"><b>Preview</b> · You’re playing bots. Friends can join once Pokr is online.</div>
 <div id="app"><div class="boot"><span class="logo xl" aria-label="Pokr">p<span class="chip-o"></span>kr</span></div></div>
 <div id="modal"></div>
 <div id="toast" role="status" aria-live="polite"></div>
