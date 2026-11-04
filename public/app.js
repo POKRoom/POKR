@@ -452,7 +452,7 @@ function renderTabs() {
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
   window.scrollTo(0, y);
-  app.querySelectorAll('.tabbar [data-tab]').forEach(b => b.onclick = () => { if (S.tab === b.dataset.tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; } buzz(4); S.tab = b.dataset.tab; renderTabs(); });
+  app.querySelectorAll('.tabbar [data-tab]').forEach(b => b.onclick = () => { if (S.tab === b.dataset.tab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; } S.tab = b.dataset.tab; renderTabs(); });
   $('#nav-plus').onclick = () => { buzz(6); openPlusSheet(); };
   ['#hs-track', '.gscroll'].forEach((q, i) => { const e = document.querySelector(q); if (e && keepX[i]) e.scrollLeft = keepX[i]; });
   if (body.bind) body.bind();
@@ -582,7 +582,7 @@ function openHostTourney() {
     <button class="btn primary" id="ht-go">Create tournament</button>
     <p class="fine">You start it when everyone’s in. Friends join with the code.</p>`, () => {
     document.querySelectorAll('.hopt').forEach(b => b.onclick = () => {
-      const k = b.dataset.hk; H[k] = isNaN(+b.dataset.hv) ? b.dataset.hv : +b.dataset.hv; buzz(4);
+      const k = b.dataset.hk; H[k] = isNaN(+b.dataset.hv) ? b.dataset.hv : +b.dataset.hv;
       document.querySelectorAll(`.hopt[data-hk="${k}"]`).forEach(x => x.setAttribute('aria-pressed', String(H[k]) === x.dataset.hv));
     });
     $('#ht-late').onchange = e => { H.lateReg = e.target.checked; };
@@ -628,7 +628,7 @@ function gameChips() {
   </div>`;
 }
 function bindGameChips(rerender) {
-  app.querySelectorAll('[data-gf]').forEach(b => b.onclick = () => { buzz(4); S.gameFilter = b.dataset.gf; rerender(); });
+  app.querySelectorAll('[data-gf]').forEach(b => b.onclick = () => { S.gameFilter = b.dataset.gf; rerender(); });
   const d = $('#blinds-drop');
   if (d) d.onclick = () => openSheet(`<h2>Blinds</h2><div class="list">${[['all', 'Any blinds'], ...STAKES.map(([k, sb, bb]) => [k, blinds(sb, bb)])].map(([k, l]) => `<button class="lrowbtn" data-bpick="${k}"><div class="lr-txt"><b>${l}</b></div>${S.blindFilter === k ? '<span class="soon">✓</span>' : ''}</button>`).join('')}</div>`, () => {
     document.querySelectorAll('[data-bpick]').forEach(b => b.onclick = () => { S.blindFilter = b.dataset.bpick; closeModal(); rerender(); });
@@ -742,16 +742,16 @@ function openNewTable() {
     <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
     <button class="btn primary" id="create-go">Open the table</button>`, () => {
     document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
-      S.stakes = b.dataset.st; buzz(4);
+      S.stakes = b.dataset.st;
       document.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
     });
     $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
     document.querySelectorAll('[data-seats]').forEach(b => b.onclick = () => {
-      S.seats = +b.dataset.seats; buzz(4);
+      S.seats = +b.dataset.seats;
       document.querySelectorAll('[data-seats]').forEach(x => x.setAttribute('aria-checked', +x.dataset.seats === S.seats));
     });
     document.querySelectorAll('[data-game]').forEach(b => b.onclick = () => {
-      S.game = b.dataset.game; buzz(4);
+      S.game = b.dataset.game;
       document.querySelectorAll('[data-game]').forEach(x => x.setAttribute('aria-checked', x.dataset.game === S.game));
     });
     $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh', seats: S.seats || 6 }); };
@@ -899,7 +899,7 @@ function tabMe() {
 
 // bottom sheet on phones, centered card on computers
 function openSheet(html, after) {
-  $('#modal').innerHTML = `<div class="mscrim sheetish"><div class="panel dialog" role="dialog" aria-modal="true"><span class="grab" aria-hidden="true"></span>${html}</div></div>`;
+  $('#modal').innerHTML = `<div class="mscrim sheetish"><div class="panel dialog" role="dialog" aria-modal="true"><span class="grab" aria-hidden="true"></span><button type="button" class="sheet-cancel" data-close>Cancel</button>${html}</div></div>`;
   const scrim = $('#modal .mscrim');
   scrim.onclick = e => { if (e.target === scrim || e.target.hasAttribute('data-close')) closeModal(); };
   if (after) after();
@@ -982,7 +982,7 @@ function feltPickerHTML(me, C, member) {
 function bindFeltPicker(root) {
   root.querySelectorAll('[data-felt]').forEach(b => b.onclick = () => {
     if (b.dataset.locked) { toast('That felt comes with Pro Pass', ['See Pro Pass', () => { closeModal(); renderClub(); }]); return; }
-    buzz(4); document.body.dataset.felt = b.dataset.felt;
+    document.body.dataset.felt = b.dataset.felt;
     send({ t: 'setFelt', felt: b.dataset.felt });
     root.querySelectorAll('[data-felt]').forEach(x => { const on = x === b; x.classList.toggle('using', on); x.setAttribute('aria-pressed', on); const st = x.querySelector('.fstate'); if (st && !x.dataset.locked) st.textContent = on ? 'In use' : 'Use'; });
   });
@@ -1409,6 +1409,7 @@ function winBanner(T, now) {
 
 // Chips slide from the pot to each winner's seat, then the seat flashes the amount won.
 function flyChips(winners) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const pot = document.querySelector('#stage .pot');
   if (!pot || S.view !== 'table') return;
   const p = pot.getBoundingClientRect();
@@ -1609,7 +1610,7 @@ function raisePickerHTML(T, A) {
 const towerT = (A, v) => A.maxTo > A.minTo ? Math.pow((v - A.minTo) / (A.maxTo - A.minTo), 1 / TOWER_EASE) : 1;
 function bindRaisePicker(T, A) {
   $('#pk-back').onclick = () => { S.raiseOpen = false; renderMine(true); };
-  document.querySelectorAll('.tp-pre').forEach(b => b.onclick = () => { buzz(4); setRaise(+b.dataset.v); });
+  document.querySelectorAll('.tp-pre').forEach(b => b.onclick = () => { setRaise(+b.dataset.v); });
   $('#pk-go').onclick = () => { buzz(); $('#pk-go').disabled = true; send({ t: 'act', kind: 'raise', amount: S.raiseTo }); S.raiseOpen = false; };
   const tw = $('#tower'), track = tw.querySelector('.tw-track');
   let dragging = false, lastStep = -1;
