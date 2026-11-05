@@ -34,9 +34,11 @@ class Store {
     this.users = new Map();
     this.byEmailMap = new Map();
     this.bySession = new Map();
+    this.clubs = new Map(); // club id -> club (see clubs.js); saved with the accounts
     if (fs.existsSync(this.file)) {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       for (const u of raw.users || []) if (u.email || u.guest) this._index(u); // pre-account profiles without either are dropped
+      for (const c of raw.clubs || []) this.clubs.set(c.id, c);
     }
     this.saveTimer = null;
     this.cloud = null;
@@ -50,11 +52,16 @@ class Store {
       try { users = await cloud.loadUsers(); } catch (e) { err = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
     }
     if (!users) throw new Error('Couldn’t reach the cloud database: ' + (err && err.message));
+    const clubs = cloud.loadClubs ? await cloud.loadClubs() : [];
     this.cloud = cloud;
-    this.pushed = new Map();
+    this.pushed = new Map(); // 'u:id' / 'c:id' -> the JSON last uploaded
     if (users.length) {
       this.users.clear(); this.byEmailMap.clear(); this.bySession.clear();
-      for (const u of users) if (u.email || u.guest) { this._index(u); this.pushed.set(u.id, JSON.stringify(u)); }
+      for (const u of users) if (u.email || u.guest) { this._index(u); this.pushed.set('u:' + u.id, JSON.stringify(u)); }
+    }
+    if (clubs.length) {
+      this.clubs.clear();
+      for (const c of clubs) { this.clubs.set(c.id, c); this.pushed.set('c:' + c.id, JSON.stringify(c)); }
     }
     this.cloudTimer = null; this.cloudBusy = null;
     await this.pushCloud(); // first run: uploads anyone who was only on disk
@@ -64,14 +71,18 @@ class Store {
   async pushCloud() {
     if (!this.cloud) return;
     if (this.cloudBusy) { this.cloudAgain = true; return this.cloudBusy; }
-    const pairs = [];
+    const pairs = [], cpairs = [];
     for (const u of this.users.values()) {
       const j = JSON.stringify(u);
-      if (this.pushed.get(u.id) !== j) pairs.push([u.id, j]);
+      if (this.pushed.get('u:' + u.id) !== j) pairs.push([u.id, j]);
     }
-    if (!pairs.length) return;
-    this.cloudBusy = this.cloud.saveUsers(pairs)
-      .then(() => { for (const [id, j] of pairs) this.pushed.set(id, j); })
+    for (const c of this.clubs.values()) {
+      const j = JSON.stringify(c);
+      if (this.pushed.get('c:' + c.id) !== j) cpairs.push([c.id, j]);
+    }
+    if (!pairs.length && !cpairs.length) return;
+    this.cloudBusy = Promise.all([this.cloud.saveUsers(pairs), cpairs.length && this.cloud.saveClubs ? this.cloud.saveClubs(cpairs) : null])
+      .then(() => { for (const [id, j] of pairs) this.pushed.set('u:' + id, j); for (const [id, j] of cpairs) this.pushed.set('c:' + id, j); })
       .catch(e => console.error('cloud save failed, will retry:', e.message))
       .finally(() => { this.cloudBusy = null; if (this.cloudAgain) { this.cloudAgain = false; this.scheduleCloud(); } });
     return this.cloudBusy;
@@ -171,6 +182,12 @@ class Store {
   bySessionToken(token) { return token ? this.bySession.get(sha(token)) || null : null; }
   byId(id) { return this.users.get(id) || null; }
   all() { return [...this.users.values()]; }
+  // A club was deleted: drop it here and in the cloud.
+  dropClub(id) {
+    this.clubs.delete(id);
+    if (this.cloud && this.cloud.deleteClub) { this.pushed.delete('c:' + id); this.cloud.deleteClub(id).catch(e => console.error('cloud delete failed:', e.message)); }
+    this.save();
+  }
 
   // One finished hand for this player.
   recordHand(u, { delta, won, pot }) {
@@ -231,7 +248,7 @@ class Store {
   }
   saveNow() {
     const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ version: 2, users: [...this.users.values()] }));
+    fs.writeFileSync(tmp, JSON.stringify({ version: 3, users: [...this.users.values()], clubs: [...this.clubs.values()] }));
     fs.renameSync(tmp, this.file);
     this.scheduleCloud();
   }

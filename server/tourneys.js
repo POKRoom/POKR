@@ -61,6 +61,7 @@ function createManager(deps) {
       onBust: (p, info) => {
         if (p.kind !== 'human' || !p.userId) return;
         if (info.prize) deps.credit(p.userId, info.prize, `${tour.name}: ${ordinal(info.place)} place`);
+        if (deps.onResult) deps.onResult(tour, p, info); // e.g. a club's leaderboard
         deps.notify(p.userId, { t: 'tourneyResult', id: tour.id, name: tour.name, place: info.place, prize: info.prize, entries: info.entries, won: !!info.won, canReenter: !!info.canReenter, buyIn: tour.buyIn });
       },
       onRefund: (p, cents) => { if (p.kind === 'human' && p.userId && cents) deps.credit(p.userId, cents, `${tour.name} canceled: refund`); },
@@ -142,6 +143,7 @@ function createManager(deps) {
         seatsPerTable: Math.max(5, Math.min(9, cfg.seats || 9)), lateRegLevels: cfg.lateReg ? 4 : 0, reentries: cfg.reentry ? 1 : 0,
         hostId: userId, isPrivate: true, game: cfg.game === 'plo' ? 'plo' : 'nlh',
       });
+      if (cfg.clubId) t.clubId = cfg.clubId;
       return t;
     },
     start(userId, id) { const t = find(id); if (!t) return 'Not found'; if (t.hostId !== userId) return 'Only the host can start it'; return t.start(); },

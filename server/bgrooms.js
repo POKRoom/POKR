@@ -30,7 +30,7 @@ function createRooms(deps) {
     seatOf(userId) { return this.seats.findIndex(s => s && s.userId === userId); }
     humans() { return this.seats.filter(s => s && s.kind === 'human').length; }
     summary() {
-      return { code: this.code, name: this.name, stake: this.stake, buyIn: this.buyIn, playing: !!this.game,
+      return { code: this.code, name: this.name, stake: this.stake, buyIn: this.buyIn, playing: !!this.game, clubId: this.clubId || null,
         seats: this.seats.map(s => (s ? { name: s.name, avatar: s.avatar, kind: s.kind } : null)) };
     }
     _changed() { this.lastActive = Date.now(); deps.broadcast(this); deps.changed(); }
@@ -150,6 +150,7 @@ function createRooms(deps) {
       if (l) l.stack -= paid;
       if (w) w.stack += paid;
       for (const s of [w, l]) if (s && s.kind === 'human') deps.setAt(s.userId, this.code, s.stack);
+      if (deps.onGame) deps.onGame(this, w, l, paid); // e.g. a club's leaderboard
       this.history.unshift({ winner: w ? w.name : '?', kind: r.kind, points: r.points, paid, dropped: r.dropped, cube: g.cube });
       this.history = this.history.slice(0, 6);
       this.result = { ...r, paid, winnerName: w ? w.name : '' };
@@ -171,7 +172,7 @@ function createRooms(deps) {
       const me = userId ? this.seatOf(userId) : -1;
       const g = this.game;
       return {
-        code: this.code, name: this.name, stake: this.stake, buyIn: this.buyIn, isPrivate: this.isPrivate, mySeat: me, gameNo: this.gameNo,
+        code: this.code, name: this.name, stake: this.stake, buyIn: this.buyIn, isPrivate: this.isPrivate, mySeat: me, gameNo: this.gameNo, clubId: this.clubId || null,
         seats: this.seats.map(s => (s ? { name: s.name, avatar: s.avatar, stack: s.stack, kind: s.kind, connected: s.connected, level: s.level } : null)),
         deadlineIn: this.deadline ? Math.max(0, this.deadline - Date.now()) : 0,
         lastMoves: this.lastMoves, history: this.history, result: this.result || null,
@@ -189,11 +190,13 @@ function createRooms(deps) {
   return {
     rooms, STAKES, BUY_IN_POINTS,
     list() { return [...rooms.values()].filter(r => !r.isPrivate && r.humans() > 0).map(r => r.summary()); },
+    forClub(clubId) { return [...rooms.values()].filter(r => r.clubId === clubId).map(r => r.summary()); },
     // Make a board. vsBot: put a bot in the other seat right away.
-    create(userId, info, { stake, vsBot, level, isPrivate }) {
+    create(userId, info, { stake, vsBot, level, isPrivate, clubId }) {
       stake = STAKES.includes(stake) ? stake : STAKES[1];
       const code = deps.makeCode();
-      const room = new Room({ code, name: vsBot ? `${info.name} vs bot` : `${info.name}’s board`, stake, hostId: userId, isPrivate: !!(isPrivate || vsBot) });
+      const room = new Room({ code, name: vsBot ? `${info.name} vs bot` : `${info.name}’s board`, stake, hostId: userId, isPrivate: !!(isPrivate || vsBot || clubId) });
+      if (clubId) room.clubId = clubId;
       rooms.set(code, room);
       const err = this.sit(userId, info, code);
       if (err) { rooms.delete(code); return { err }; }

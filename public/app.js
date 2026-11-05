@@ -335,6 +335,10 @@ function onMessage(m) {
       else if (S.view === 'cashier') renderCashier();
       break;
     }
+    case 'clubs': S.clubs = m.list; if (S.view === 'tabs' && S.tab === 'social') renderTabs(); break;
+    case 'clubState': onClubState(m.s); break;
+    case 'clubInvite': showInvite(m.id, m.token); break;
+    case 'clubGone': if (S.view === 'clubhome') { toast(S.clubS ? 'That club has closed' : 'No club with that code'); closeClubHome(); } break;
     case 'bgState': S.bg = m.s; if (S.view === 'bg') renderBg(); break;
     case 'bgGone': toast('That board has closed'); if (S.view === 'bg') { S.bg = null; renderTabs(); } break;
     case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social' || S.tab === 'bg')) renderTabs(); else if (S.view === 'alltables') renderAllTables(); break;
@@ -342,6 +346,7 @@ function onMessage(m) {
     case 'state': {
       const fresh = S.view !== 'table' || !S.table || S.table.code !== m.s.code || !$('#stage');
       S.table = m.s; S.tableAt = performance.now();
+      document.body.dataset.felt = (m.s.club && m.s.club.room) || (S.me && S.me.felt) || 'green';
       if (fresh) { S.view = 'table'; renderTableShell(); }
       renderTable();
       break;
@@ -367,7 +372,12 @@ function routeCode() {
   const m = location.pathname.match(/^\/t\/([A-Za-z0-9]{3,8})/);
   return m ? m[1].toUpperCase() : null;
 }
-function enterApp() { const code = routeCode(); if (code) joinCode(code); else goLobby(); }
+function routeClub() {
+  if (PREVIEW) return null;
+  const m = location.pathname.match(/^\/c\/([A-Za-z0-9]{3,8})/);
+  return m ? { id: m[1].toUpperCase(), token: new URLSearchParams(location.search).get('i') } : null;
+}
+function enterApp() { const code = routeCode(), club = routeClub(); if (code) joinCode(code); else if (club) openClubHome(club.id, club.token); else goLobby(); }
 function joinCode(code) {
   S.view = 'table'; S.table = null; S.chat = []; S.actionKey = ''; S.chatOpen = false; S.menuOpen = false; S.unread = false;
   app.innerHTML = `<div class="tbl skel-table" aria-busy="true" aria-label="Joining table ${esc(code)}">
@@ -380,7 +390,7 @@ function joinCode(code) {
 // stepping away from a table to another screen keeps your seat
 function leaveTableView() { if (S.view === 'table') { send({ t: 'leave', keepSeat: true }); nav('/'); S.table = null; closeChat(); closeMenu(); } }
 function goLobby() { S.table = null; closeChat(); send({ t: 'lobby' }); renderTabs(); }
-function leaveTable() { send({ t: 'leave' }); nav('/'); S.table = null; closeChat(); renderTabs(); }
+function leaveTable() { const cl = S.table && S.table.club; send({ t: 'leave' }); nav('/'); S.table = null; closeChat(); if (cl) openClubHome(cl.id); else renderTabs(); }
 window.addEventListener('popstate', () => {
   const code = routeCode();
   if (code) joinCode(code);
@@ -629,13 +639,14 @@ const TICON = {
 };
 const suitIcon = i => `<svg viewBox="0 0 24 24" class="suit"><g class="f" fill="currentColor">${SUIT_SVG[i]}</g></svg>`;
 TICON.play = suitIcon(0); TICON.games = suitIcon(1); TICON.social = suitIcon(3); TICON.wallet = suitIcon(2);
-const TABS = [['play', 'Play'], ['games', 'Home games'], ['bg', 'Backgammon'], ['tourneys', 'Tourneys'], ['social', 'Social'], ['me', 'Profile']];
+const TABS = [['play', 'Play'], ['games', 'Home games'], ['bg', 'Backgammon'], ['tourneys', 'Tourneys'], ['social', 'Clubs'], ['me', 'Profile']];
 
 function renderTabs() {
   S.view = 'tabs';
   S.tab = S.tab || 'play';
   const me = S.me;
   if (!me) return;
+  document.body.dataset.felt = me.felt || 'green';
   const same = S.lastTab === S.tab && S.lastPainted === 'tabs';
   const y = same ? window.scrollY : 0;
   const keepX = ['#hs-track', '.gscroll'].map(q => { const e = document.querySelector(q); return e ? e.scrollLeft : 0; });
@@ -776,12 +787,12 @@ function renderTourney(id, refresh) {
 }
 function closeTourney() { send({ t: 'tUnwatch' }); S.tourView = null; S.tour = null; goLobby(); }
 
-function openHostTourney() {
+function openHostTourney(opts = {}) {
   closeModal();
   S.ht = S.ht || { game: 'nlh', buyIn: 1000, speed: 'turbo', seats: 9, lateReg: true, reentry: false };
   const H = S.ht;
   const opt = (key, val, label, sub) => `<button type="button" class="hopt" data-hk="${key}" data-hv="${val}" aria-pressed="${String(H[key]) === String(val)}"><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</button>`;
-  openSheet(`<h2>Host a tournament</h2>
+  openSheet(`<h2>${opts.clubId ? `${esc(opts.clubName)} tournament` : 'Host a tournament'}</h2>
     <input id="ht-name" maxlength="30" placeholder="${esc(S.me.name)}'s tournament" aria-label="Tournament name">
     <span class="lbl">Game</span><div class="hrow2">${opt('game', 'nlh', 'Hold’em')}${opt('game', 'plo', 'Omaha')}</div>
     <span class="lbl">Buy-in</span><div class="hrow6">${[[0, 'Free'], [500, '$5'], [1000, '$10'], [2500, '$25'], [5000, '$50'], [10000, '$100']].map(([v, l]) => opt('buyIn', v, l)).join('')}</div>
@@ -797,7 +808,7 @@ function openHostTourney() {
     });
     $('#ht-late').onchange = e => { H.lateReg = e.target.checked; };
     $('#ht-re').onchange = e => { H.reentry = e.target.checked; };
-    $('#ht-go').onclick = () => { const name = $('#ht-name').value; closeModal(); send({ t: 'tHost', name, ...H }); };
+    $('#ht-go').onclick = () => { const name = $('#ht-name').value; closeModal(); send({ t: 'tHost', name, ...H, clubId: opts.clubId }); };
   });
 }
 
@@ -970,10 +981,10 @@ function openPlusSheet() {
 }
 
 const blindLabel = k => { const st = STAKES.find(x => x[0] === k); return st ? blinds(st[1], st[2]) : ''; };
-function openNewTable() {
+function openNewTable(opts = {}) {
   const me = S.me;
   openSheet(`
-    <h2>Start a table</h2>
+    <h2>${opts.clubId ? `${esc(opts.clubName)} table` : 'Start a table'}</h2>
     <input id="tname" maxlength="28" placeholder="${esc(me.name)}'s table" aria-label="Table name">
     <span class="lbl">Game</span>
     <div class="seg2 game-seg" role="radiogroup" aria-label="Game"><button type="button" role="radio" data-game="nlh" aria-checked="${S.game !== 'plo'}">No-Limit Hold’em</button><button type="button" role="radio" data-game="plo" aria-checked="${S.game === 'plo'}">Pot-Limit Omaha</button></div>
@@ -981,13 +992,13 @@ function openNewTable() {
     <div class="seatpick" role="radiogroup" aria-label="Table size">${[5, 6, 7, 8, 9].map(n => `<button type="button" role="radio" data-seats="${n}" aria-checked="${(S.seats || 6) === n}"><b>${n}</b><span>${n === 9 ? 'full ring' : n === 6 ? '6-max' : 'seats'}</span></button>`).join('')}</div>
     <span class="lbl">Blinds</span>
     <div class="books">${STAKES.map(([k, sb, bb]) => `<button type="button" class="book" data-st="${k}" aria-pressed="${S.stakes === k}"><span class="cover">${blinds(sb, bb)}</span><span class="strike"></span><span class="buy">Max buy-in ${money(bb * 100)}</span></button>`).join('')}</div>
-    <label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>
+    ${opts.clubId ? '<p class="fine left">Only club members can sit. It shows up on the club’s page.</p>' : `<label class="switch"><input type="checkbox" id="tpriv" ${S.isPrivate ? 'checked' : ''}> Private: only people with the link can join</label>`}
     <button class="btn primary" id="create-go">Open the table</button>`, () => {
     document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
       S.stakes = b.dataset.st;
       document.querySelectorAll('[data-st]').forEach(x => x.setAttribute('aria-pressed', x.dataset.st === S.stakes));
     });
-    $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
+    if ($('#tpriv')) $('#tpriv').onchange = e => { S.isPrivate = e.target.checked; };
     document.querySelectorAll('[data-seats]').forEach(b => b.onclick = () => {
       S.seats = +b.dataset.seats;
       document.querySelectorAll('[data-seats]').forEach(x => x.setAttribute('aria-checked', +x.dataset.seats === S.seats));
@@ -996,7 +1007,7 @@ function openNewTable() {
       S.game = b.dataset.game;
       document.querySelectorAll('[data-game]').forEach(x => x.setAttribute('aria-checked', x.dataset.game === S.game));
     });
-    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh', seats: S.seats || 6 }); };
+    $('#create-go').onclick = () => { closeModal(); send({ t: 'create', name: $('#tname') ? $('#tname').value : '', stakes: S.stakes, isPrivate: S.isPrivate, game: S.game === 'plo' ? 'plo' : 'nlh', seats: S.seats || 6, clubId: opts.clubId }); };
   });
 }
 function openJoinCode() {
@@ -1028,21 +1039,383 @@ function tabGames() {
 
 function tabSocial() {
   const me = S.me, L = S.lobby || { leaderboard: [] };
-  S.socialSeg = S.socialSeg || 'board';
+  S.socialSeg = S.socialSeg === 'board' ? 'board' : 'clubs';
   const board = S.socialSeg === 'board';
   const html = `
-    ${largeTitle('Social')}
-    <div class="seg2" role="tablist"><button role="tab" data-seg="board" aria-selected="${board}">Leaderboard</button><button role="tab" data-seg="crews" aria-selected="${!board}">Crews</button></div>
+    ${largeTitle('Clubs')}
+    <div class="seg2" role="tablist"><button role="tab" data-seg="clubs" aria-selected="${!board}">My clubs</button><button role="tab" data-seg="board" aria-selected="${board}">Leaderboard</button></div>
     ${board ? `<section class="panel">
       <div class="sec-head"><h2>High Rollers</h2><span class="lbl">All time</span></div>
       ${!S.lobby ? skelRows(4) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
         <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar, p.name)}<span class="nm">${esc(p.name)}${vipStar(p.avatar)}</span>
         <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
         : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot.</p></div>'}
-    </section>` : `
-    <div class="empty card-empty"><p>Crews aren’t open yet.</p><p class="sub">Your group’s own leaderboard, seasons and rivalries. Coming with friend accounts.</p></div>`}`;
-  const bind = () => app.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { S.socialSeg = b.dataset.seg; renderTabs(); });
+    </section>` : myClubsHTML()}`;
+  const bind = () => {
+    app.querySelectorAll('[data-seg]').forEach(b => b.onclick = () => { S.socialSeg = b.dataset.seg; renderTabs(); });
+    if (!board) bindMyClubs();
+  };
   return { html, bind };
+}
+
+/* ---------------- clubs ---------------- */
+// A club is a group's own room: its games, standings by week and season, a champion, and a chat.
+// Clubs never hold money; everyone plays from their own balance.
+const CREST_COLORS = ['#2F6B4F', '#34548A', '#7E2F3B', '#A8823A', '#4A4C55', '#2C6E73', '#5E4790', '#9A5530'];
+const CREST_GLYPHS = [
+  SUIT_SVG[0], SUIT_SVG[1], SUIT_SVG[2], SUIT_SVG[3],
+  '<path d="M4 17.5 3 7.5l5 4 4-6.5 4 6.5 5-4-1 10Z"/><rect x="4" y="18.6" width="16" height="2.2" rx="1"/>',
+  '<path d="m12 2.8 2.7 5.9 6.4.7-4.8 4.3 1.4 6.3L12 16.8 6.3 20l1.4-6.3L2.9 9.4l6.4-.7Z"/>',
+  '<path d="M15.5 3.2A8.6 8.6 0 1 0 20.8 15 7 7 0 0 1 15.5 3.2Z"/>',
+  '<path d="M13.6 2.5 5 13.6h5.6L9.4 21.5 19 9.8h-5.8Z"/>',
+];
+const CLUB_ROOMS = [['green', 'Green'], ['blue', 'Blue'], ['burgundy', 'Wine'], ['graphite', 'Graphite'], ['teal', 'Teal'], ['purple', 'Purple'], ['tan', 'Tan']];
+const ROOM_SWATCH = { green: '#1F7049', blue: '#1C3B66', burgundy: '#5C1B26', graphite: '#2E2F33', teal: '#0E5152', purple: '#3D2763', tan: '#6E5638' };
+const JOIN_TEXT = { open: 'Anyone with the code can join', approval: 'Ask to join; a manager lets you in', invite: 'Invite only' };
+const ROLE_NAME = { owner: 'Owner', manager: 'Manager', member: 'Member' };
+function crestHTML(cr, size = 40) {
+  const c = cr || { glyph: 0, color: 0 };
+  return `<svg class="crest" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="${CREST_COLORS[c.color % 8]}"/><rect x=".5" y=".5" width="39" height="39" rx="10.5" fill="none" stroke="#fff" stroke-opacity=".12"/><g transform="translate(9 9) scale(.9167)" fill="#fff">${CREST_GLYPHS[c.glyph % 8]}</g></svg>`;
+}
+const clubAgo = ts => { const s = Math.max(0, (Date.now() - ts) / 1000); return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
+const monthName = ym => { if (!ym) return ''; const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+const hasPass = () => !!(S.me && S.me.club && S.me.club.active);
+
+function myClubsHTML() {
+  const list = S.clubs;
+  const rows = !list ? skelRows(2) : list.length ? `<div class="glist">${list.map(c => `
+    <button class="grow club-row" data-club="${esc(c.id)}">${crestHTML(c.crest, 40)}
+      <span class="gr-main"><b>${esc(c.name)}</b><span>${c.members} member${c.members === 1 ? '' : 's'}${c.role !== 'member' ? ` · ${ROLE_NAME[c.role]}` : ''}${c.champion ? ` · Champion ${esc(c.champion)}` : ''}</span></span>${TICON.chev}</button>`).join('')}</div>`
+    : `<div class="empty card-empty"><p>You’re not in a club yet.</p><p class="sub">A club is your group’s own room: its games, standings, a champion every month, and a chat that stays.</p></div>`;
+  const full = list && list.length >= 5;
+  return `${rows}
+    <div class="list">
+      <button class="lrowbtn" id="cl-new" ${full ? 'disabled' : ''}>${TICON.plus}<div class="lr-txt"><b>Start a club</b><span>${hasPass() ? 'Up to 100 members' : 'Comes with Pro Pass'}</span></div>${TICON.chev}</button>
+      <button class="lrowbtn" id="cl-join" ${full ? 'disabled' : ''}>${TICON.key}<div class="lr-txt"><b>Join a club</b><span>With its 5-letter code</span></div>${TICON.chev}</button>
+    </div>
+    <p class="fine left">You can be in up to 5 clubs. A club never holds money: everyone plays from their own balance, and there’s no rake.</p>`;
+}
+function bindMyClubs() {
+  app.querySelectorAll('[data-club]').forEach(b => b.onclick = () => openClubHome(b.dataset.club));
+  const n = $('#cl-new'); if (n) n.onclick = openCreateClub;
+  const j = $('#cl-join'); if (j) j.onclick = openJoinClub;
+  if (!S.clubsAt || Date.now() - S.clubsAt > 4000) { S.clubsAt = Date.now(); send({ t: 'clubMine' }); }
+}
+function openJoinClub() {
+  openSheet(`<h2>Join a club</h2><p class="wait">Ask someone in the club for its 5-letter code.</p>
+    <form class="join-row" id="cljf"><input id="cljc" maxlength="8" placeholder="NIGHT" autocomplete="off" aria-label="Club code" autocapitalize="characters"><button class="btn primary" type="submit">Find</button></form>`, () => {
+    $('#cljc').focus();
+    $('#cljf').onsubmit = e => { e.preventDefault(); const code = $('#cljc').value.trim().toUpperCase(); if (code) { closeModal(); openClubHome(code); } };
+  });
+}
+function crestPicker(st) {
+  return `<div class="crest-pick">
+      <div class="cp-prev">${crestHTML(st, 64)}</div>
+      <div class="cp-rows">
+        <div class="cp-row" role="radiogroup" aria-label="Symbol">${CREST_GLYPHS.map((g, i) => `<button type="button" role="radio" data-cg="${i}" aria-checked="${st.glyph === i}"><svg viewBox="0 0 24 24" fill="currentColor">${g}</svg></button>`).join('')}</div>
+        <div class="cp-row" role="radiogroup" aria-label="Colour">${CREST_COLORS.map((c, i) => `<button type="button" role="radio" data-cc="${i}" aria-checked="${st.color === i}" style="--sw:${c}" aria-label="Colour ${i + 1}"><i></i></button>`).join('')}</div>
+      </div></div>`;
+}
+function roomPicker(cur) {
+  return `<div class="room-pick" role="radiogroup" aria-label="Table felt">${CLUB_ROOMS.map(([k, l]) => `<button type="button" role="radio" data-room="${k}" aria-checked="${cur === k}"><i style="--sw:${ROOM_SWATCH[k]}"></i><span>${l}</span></button>`).join('')}</div>`;
+}
+function joinPicker(cur) {
+  return `<div class="game-seg seg3" role="radiogroup" aria-label="Who can join">${[['open', 'Open'], ['approval', 'Approval'], ['invite', 'Invite only']].map(([k, l]) => `<button type="button" role="radio" data-jm="${k}" aria-checked="${cur === k}">${l}</button>`).join('')}</div>`;
+}
+function bindPickers(st, redraw) {
+  document.querySelectorAll('[data-cg]').forEach(b => b.onclick = () => { st.glyph = +b.dataset.cg; redraw(); });
+  document.querySelectorAll('[data-cc]').forEach(b => b.onclick = () => { st.color = +b.dataset.cc; redraw(); });
+  document.querySelectorAll('[data-room]').forEach(b => b.onclick = () => { st.room = b.dataset.room; redraw(); });
+  document.querySelectorAll('[data-jm]').forEach(b => b.onclick = () => { st.join = b.dataset.jm; redraw(); });
+}
+function openCreateClub() {
+  if (!hasPass()) {
+    openSheet(`<h2>Start a club</h2>
+      <div class="cl-pitch">${crestHTML({ glyph: 4, color: 3 }, 56)}<p>Run your own room: up to 100 members, club tables, tournaments and boards, standings every week and season, and a champion every month.</p></div>
+      <p class="wait">Starting a club comes with Pro Pass. Anyone can join one for free.</p>
+      <button class="btn primary" id="clp-go">See Pro Pass</button>`, () => { $('#clp-go').onclick = () => { closeModal(); renderClub(); }; });
+    return;
+  }
+  const st = S.clubDraft || (S.clubDraft = { name: '', glyph: 0, color: 0, join: 'approval', room: 'green' });
+  const draw = () => {
+    const name = $('#cln') ? $('#cln').value : st.name; st.name = name;
+    openSheet(`<h2>Start a club</h2>
+      <input id="cln" maxlength="28" placeholder="Club name" aria-label="Club name" value="${esc(st.name)}">
+      <span class="lbl">Crest</span>${crestPicker(st)}
+      <span class="lbl">Who can join</span>${joinPicker(st.join)}
+      <p class="fine left cl-jt">${JOIN_TEXT[st.join]}</p>
+      <span class="lbl">Club tables</span>${roomPicker(st.room)}
+      <button class="btn primary" id="cl-go">Start the club</button>
+      <p class="fine">You’re the owner. Make friends managers to help run it.</p>`, () => {
+      bindPickers(st, draw);
+      $('#cl-go').onclick = () => {
+        st.name = $('#cln').value.trim();
+        if (st.name.length < 3) { toast('Give your club a name (at least 3 characters)'); $('#cln').focus(); return; }
+        closeModal(); S.clubWant = '*'; renderClubWait('Starting your club'); send({ t: 'clubCreate', ...st });
+      };
+    });
+  };
+  draw();
+}
+function renderClubWait(title) {
+  S.view = 'clubhome';
+  app.innerHTML = `<div class="page clubpage">${pageBar(esc(title || 'Club'))}<div class="club-head"><span class="skel" style="width:56px;height:56px;border-radius:15px"></span><div style="flex:1;display:flex;flex-direction:column;gap:8px"><span class="skel" style="width:55%;height:18px"></span><span class="skel" style="width:35%;height:12px"></span></div></div>${skelRows(3)}</div>`;
+  enter();
+  $('#pg-back').onclick = closeClubHome;
+}
+function openClubHome(id, token) {
+  leaveTableView();
+  S.clubWant = String(id).toUpperCase(); S.clubToken = token || S.clubToken || null; S.clubS = null;
+  S.clubSeg = S.clubSeg || 'games';
+  renderClubWait();
+  send({ t: 'clubOpen', id: S.clubWant });
+}
+function closeClubHome() { send({ t: 'clubClose' }); S.clubS = null; S.clubWant = null; S.tab = 'social'; S.socialSeg = 'clubs'; nav('/'); goLobby(); }
+function onClubState(s) {
+  if (S.view !== 'clubhome') { if (S.clubS && S.clubS.id === s.id) S.clubS = s; return; }
+  if (S.clubWant !== '*' && S.clubWant !== s.id) return;
+  S.clubWant = s.id;
+  const fresh = !S.clubS || S.clubS.id !== s.id;
+  S.clubS = s;
+  renderClubHome(!fresh);
+}
+
+function renderClubHome(keep) {
+  const C = S.clubS; if (!C) return;
+  S.view = 'clubhome';
+  // keep what's being typed, and where the page is, across live updates
+  const inp = $('#cc-in'), draft = inp ? inp.value : '', focused = inp && document.activeElement === inp;
+  const y = keep ? window.scrollY : 0;
+  const atBottom = keep && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 40;
+  if (!C.member) return renderClubOutside(C);
+  const staff = C.role !== 'member';
+  const seg = S.clubSeg || 'games';
+  const reqs = (C.requests || []).length;
+  const body = { games: clubGames, standings: clubStandings, chat: clubChat, members: clubMembers }[seg](C, staff);
+  app.innerHTML = `<div class="page clubpage" data-seg="${seg}">
+    <div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Clubs</button><h1 class="pb-title">${esc(C.name)}</h1><button class="btn small ghost" id="cl-more" aria-label="${staff ? 'Club settings' : 'More'}">${staff ? 'Settings' : 'More'}</button></div>
+    <header class="club-head">${crestHTML(C.crest, 56)}<div class="ch-txt"><h2>${esc(C.name)}</h2><span>Season ${C.season.n} · ${C.members} member${C.members === 1 ? '' : 's'} · <span class="mono-code">${esc(C.id)}</span></span></div></header>
+    ${C.announcement ? `<section class="club-note"><span class="cn-lbl">Pinned · ${esc((C.people.find(p => p.id === C.announcement.by) || {}).name || 'Club')} · ${clubAgo(C.announcement.at)}</span><p>${esc(C.announcement.text)}</p></section>` : ''}
+    <div class="seg2 seg4" role="tablist">${[['games', 'Games'], ['standings', 'Standings'], ['chat', 'Chat'], ['members', 'Members']].map(([k, l]) => `<button role="tab" data-cseg="${k}" aria-selected="${seg === k}">${l}${k === 'members' && staff && reqs ? `<i class="cbadge">${reqs}</i>` : ''}</button>`).join('')}</div>
+    ${body.html}
+  </div>`;
+  if (!keep) enter();
+  $('#pg-back').onclick = closeClubHome;
+  $('#cl-more').onclick = () => (staff ? openClubSettings() : openClubMore());
+  app.querySelectorAll('[data-cseg]').forEach(b => b.onclick = () => { S.clubSeg = b.dataset.cseg; renderClubHome(); if (S.clubSeg === 'chat') scrollChat(); });
+  if (body.bind) body.bind();
+  const inp2 = $('#cc-in');
+  if (inp2 && draft) inp2.value = draft;
+  if (inp2 && focused) inp2.focus({ preventScroll: true });
+  if (keep) { if (seg === 'chat' && atBottom) scrollChat(); else window.scrollTo(0, y); }
+}
+const scrollChat = () => requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+function renderClubOutside(C) {
+  const tok = S.clubToken;
+  let act;
+  if (C.banned) act = '<p class="wait">You can’t join this club.</p>';
+  else if (C.requested) act = '<button class="btn" disabled>Request sent</button><button class="textbtn" id="clo-cancel">Cancel request</button>';
+  else if (C.join === 'invite' && !tok) act = '<p class="wait">This club is invite only. Ask a manager for an invite link.</p>';
+  else act = `<button class="btn primary" id="clo-join">${C.join === 'approval' && !tok ? 'Ask to join' : 'Join club'}</button>`;
+  app.innerHTML = `<div class="page clubpage">${pageBar('Club')}
+    <section class="club-door">
+      ${crestHTML(C.crest, 72)}
+      <h2>${esc(C.name)}</h2>
+      <p>Run by ${esc(C.owner)} · ${C.members} of ${C.max} members</p>
+      ${C.champion ? `<p class="cd-champ">${crownSVG()} ${esc(C.champion.name)} won season ${C.champion.n}</p>` : ''}
+      <p class="cd-join">${JOIN_TEXT[C.join]}</p>
+      <div class="cd-act">${act}</div>
+    </section>
+    <p class="fine">Members play club tables, tournaments and boards from their own balance. Results count toward the club’s standings.</p>
+  </div>`;
+  enter();
+  $('#pg-back').onclick = closeClubHome;
+  const j = $('#clo-join'); if (j) j.onclick = () => { send({ t: 'clubJoin', id: C.id, token: tok || undefined }); S.clubToken = null; };
+  const c = $('#clo-cancel'); if (c) c.onclick = () => send({ t: 'clubCancel', id: C.id });
+}
+const crownSVG = () => '<svg class="crown" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 17.5 3 7.5l5 4 4-6.5 4 6.5 5-4-1 10Z"/><rect x="4" y="18.6" width="16" height="2.2" rx="1"/></svg>';
+
+function clubGames(C) {
+  const G = C.games || { tables: [], tourneys: [], boards: [] };
+  const live = G.tables.length + G.tourneys.length + G.boards.length;
+  const html = `
+    <button class="btn primary cl-start" id="cg-new">${TICON.plus}<span>Start a club game</span></button>
+    ${G.tables.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Tables</h2></div><div class="glist">${G.tables.map(tableRow).join('')}</div></section>` : ''}
+    ${G.tourneys.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Tournaments</h2></div>${tourRows(G.tourneys)}</section>` : ''}
+    ${G.boards.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Backgammon</h2></div><div class="glist bg-list">${G.boards.map(b => `
+        <button class="grow" data-board="${b.code}"><span class="bg-faces">${b.seats.map(x => (x ? `<span class="pmini">${portrait(x.avatar, x.name)}</span>` : '<span class="pmini open">+</span>')).join('')}</span>
+          <span class="gr-main"><b>${esc(b.name)}</b><span>${bgPer(b.stake)} · buy-in ${money(b.buyIn)}</span></span>
+          <span class="gr-side ${b.seats.every(Boolean) ? 'full' : ''}">${b.seats.every(Boolean) ? 'Watch' : 'Seat open'}</span>${TICON.chev}</button>`).join('')}</div></section>` : ''}
+    ${live ? '' : '<div class="empty card-empty"><p>Nothing running right now.</p><p class="sub">Start a table, a tournament or a backgammon board. Only members can sit.</p></div>'}
+    <p class="fine left">Results at club games count toward the standings. Everyone plays from their own balance.</p>`;
+  const bind = () => {
+    $('#cg-new').onclick = () => openClubGameSheet(C);
+    app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
+    app.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
+    app.querySelectorAll('[data-board]').forEach(b => b.onclick = () => openBoard(b.dataset.board));
+  };
+  return { html, bind };
+}
+function openClubGameSheet(C) {
+  openSheet(`<h2>Start a club game</h2><p class="wait">Only members of ${esc(C.name)} can sit.</p><div class="list">
+    <button class="lrowbtn" id="cgs-t">${TICON.play}<div class="lr-txt"><b>Cash table</b><span>Hold’em or Omaha, 5 to 9 seats</span></div>${TICON.chev}</button>
+    <button class="lrowbtn" id="cgs-m">${TICON.tourneys}<div class="lr-txt"><b>Tournament</b><span>Blind levels, payouts, a winner</span></div>${TICON.chev}</button>
+    <button class="lrowbtn" id="cgs-b">${TICON.bg}<div class="lr-txt"><b>Backgammon board</b><span>Head to head for a stake per point</span></div>${TICON.chev}</button>
+  </div>`, () => {
+    $('#cgs-t').onclick = () => { closeModal(); openNewTable({ clubId: C.id, clubName: C.name }); };
+    $('#cgs-m').onclick = () => { closeModal(); openHostTourney({ clubId: C.id, clubName: C.name }); };
+    $('#cgs-b').onclick = () => { closeModal(); openNewBoard(false, { clubId: C.id, clubName: C.name }); };
+  });
+}
+
+function clubStandings(C) {
+  const per = S.clubPeriod || 'season';
+  const val = p => (per === 'week' ? { net: p.week, games: null } : per === 'season' ? p.season : p.all);
+  const rows = C.people.map(p => ({ p, v: val(p) })).filter(x => (per === 'week' ? x.v.net !== 0 : x.v.games > 0)).sort((a, b) => b.v.net - a.v.net);
+  const champId = C.champion && C.champion.uid;
+  const html = `
+    <div class="game-seg seg3" role="radiogroup" aria-label="Period">${[['week', 'This week'], ['season', `Season ${C.season.n}`], ['all', 'All time']].map(([k, l]) => `<button role="radio" data-per="${k}" aria-checked="${per === k}">${l}</button>`).join('')}</div>
+    ${per === 'season' ? `<p class="fine left cl-season">${monthName(C.season.ym)}. The top player when the month ends is the club champion.</p>` : ''}
+    ${rows.length ? `<div class="glist cl-stand">${rows.map(({ p, v }, i) => `
+      <div class="grow static ${p.id === S.me.id ? 'me' : ''}"><span class="rk">${i + 1}</span><span class="pmini">${portrait(p.avatar, p.name)}</span>
+        <span class="gr-main"><b>${esc(p.name)}${vipStar(p.avatar)}${p.id === champId ? `<span class="champmark" title="Club champion">${crownSVG()}</span>` : ''}</b><span>${v.games != null ? `${v.games} game${v.games === 1 ? '' : 's'}` : 'Last 7 days'}</span></span>
+        <span class="num ${v.net > 0 ? 'up' : v.net < 0 ? 'down' : ''}">${signedMoney(v.net)}</span></div>`).join('')}</div>`
+      : `<div class="empty card-empty"><p>No results ${per === 'week' ? 'this week' : per === 'season' ? 'this season' : 'yet'}.</p><p class="sub">Play a club game to get on the board.</p></div>`}
+    ${C.champions && C.champions.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Champions</h2></div><div class="glist">${C.champions.map(ch => `
+      <div class="grow static"><span class="champ-ic">${crownSVG()}</span><span class="gr-main"><b>${esc(ch.name)}</b><span>Season ${ch.n}${ch.ym ? ` · ${monthName(ch.ym)}` : ''}</span></span><span class="num up">${signedMoney(ch.net)}</span></div>`).join('')}</div></section>` : ''}`;
+  const bind = () => app.querySelectorAll('[data-per]').forEach(b => b.onclick = () => { S.clubPeriod = b.dataset.per; renderClubHome(true); });
+  return { html, bind };
+}
+
+function clubChat(C) {
+  const items = C.chat || [];
+  let last = null;
+  const html = `
+    <div class="cchat">${items.length ? items.map(x => {
+      const same = last && last.uid === x.uid && x.at - last.at < 5 * 60000; last = x;
+      return `<div class="cmsg ${same ? 'cont' : ''} ${x.uid === S.me.id ? 'cm-me' : ''}">${same ? '<span class="cm-gap"></span>' : `<span class="pmini">${portrait(x.avatar, x.name)}</span>`}
+        <div class="cm-body">${same ? '' : `<span class="cm-who"><b>${esc(x.name)}</b><time>${clubAgo(x.at)}</time></span>`}<p>${esc(x.text)}</p></div></div>`;
+    }).join('') : '<div class="empty card-empty"><p>No messages yet.</p><p class="sub">Say hello. The chat stays, so people see it when they come back.</p></div>'}</div>
+    <form class="ccomp" id="ccf"><input id="cc-in" maxlength="300" placeholder="Message ${esc(C.name)}" autocomplete="off" aria-label="Message"><button class="btn primary" type="submit">Send</button></form>`;
+  const bind = () => {
+    $('#ccf').onsubmit = e => {
+      e.preventDefault();
+      const v = $('#cc-in').value.trim(); if (!v) return;
+      send({ t: 'clubChat', id: C.id, text: v }); $('#cc-in').value = '';
+    };
+  };
+  return { html, bind };
+}
+
+function clubMembers(C, staff) {
+  const order = { owner: 0, manager: 1, member: 2 };
+  const people = [...C.people].sort((a, b) => order[a.role] - order[b.role] || a.name.localeCompare(b.name));
+  const reqs = C.requests || [];
+  const html = `
+    ${staff && reqs.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Asking to join</h2></div><div class="glist">${reqs.map(r => `
+      <div class="grow static"><span class="pmini">${portrait(r.avatar, r.name)}</span><span class="gr-main"><b>${esc(r.name)}</b><span>${clubAgo(r.at)} ago</span></span>
+        <span class="req-acts"><button class="btn small" data-rq="${esc(r.id)}" data-yes="0">Decline</button><button class="btn small primary" data-rq="${esc(r.id)}" data-yes="1">Let in</button></span></div>`).join('')}</div></section>` : ''}
+    <div class="list">
+      ${staff ? `<button class="lrowbtn" id="cm-inv">${TICON.plus}<div class="lr-txt"><b>Invite link</b><span>Works once, skips the wait</span></div>${TICON.chev}</button>` : ''}
+      <button class="lrowbtn" id="cm-code">${TICON.key}<div class="lr-txt"><b>Club code ${esc(C.id)}</b><span>${JOIN_TEXT[C.join]}</span></div><span class="soon">Copy</span></button>
+    </div>
+    <section class="sec"><div class="sec-head"><h2 class="sec-title">${C.members} of ${C.max} members</h2></div><div class="glist">${people.map(p => {
+      const tappable = staff && p.id !== S.me.id && p.role !== 'owner';
+      return `<${tappable ? 'button' : 'div'} class="grow ${tappable ? '' : 'static'}" ${tappable ? `data-mem="${esc(p.id)}"` : ''}><span class="pmini">${portrait(p.avatar, p.name)}</span>
+        <span class="gr-main"><b>${esc(p.name)}${vipStar(p.avatar)}${p.id === S.me.id ? ' <span class="you">You</span>' : ''}</b><span>Joined ${new Date(p.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span></span>
+        ${p.role !== 'member' ? `<span class="role-tag ${p.role}">${ROLE_NAME[p.role]}</span>` : ''}${tappable ? TICON.chev : ''}</${tappable ? 'button' : 'div'}>`;
+    }).join('')}</div></section>
+    ${staff && (C.bans || []).length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Banned</h2></div><div class="glist">${C.bans.map(b => `
+      <div class="grow static"><span class="gr-main"><b>${esc(b.name)}</b></span><button class="btn small" data-unban="${esc(b.id)}">Unban</button></div>`).join('')}</div></section>` : ''}
+    ${C.role !== 'owner' ? '<div class="list"><button class="lrowbtn danger" id="cm-leave"><div class="lr-txt"><b>Leave club</b></div></button></div>' : ''}`;
+  const bind = () => {
+    app.querySelectorAll('[data-rq]').forEach(b => b.onclick = () => send({ t: 'clubAnswer', id: C.id, user: b.dataset.rq, yes: b.dataset.yes === '1' }));
+    app.querySelectorAll('[data-unban]').forEach(b => b.onclick = () => send({ t: 'clubUnban', id: C.id, user: b.dataset.unban }));
+    app.querySelectorAll('[data-mem]').forEach(b => b.onclick = () => openMemberSheet(C, C.people.find(p => p.id === b.dataset.mem)));
+    const inv = $('#cm-inv'); if (inv) inv.onclick = () => send({ t: 'clubInvite', id: C.id });
+    $('#cm-code').onclick = async () => { toast(await copy(C.id) ? 'Club code copied' : `Club code: ${C.id}`); };
+    const lv = $('#cm-leave'); if (lv) lv.onclick = () => confirmLeaveClub(C);
+  };
+  return { html, bind };
+}
+function showInvite(id, token) {
+  const url = `${location.origin}/c/${id}?i=${token}`;
+  openSheet(`<h2>Invite link</h2><p class="wait">Send this to one person. It works once and lets them straight in.</p>
+    <div class="invite-box"><span>${esc(url)}</span></div>
+    <button class="btn primary" id="iv-copy">Copy link</button>`, () => {
+    $('#iv-copy').onclick = async () => { if (await copy(url)) { toast('Link copied'); closeModal(); } else toast('Couldn’t copy. Press and hold the link to copy it.'); };
+  });
+}
+function openMemberSheet(C, p) {
+  if (!p) return;
+  const owner = C.role === 'owner';
+  openSheet(`<div class="mem-head"><span class="pmini">${portrait(p.avatar, p.name)}</span><div><h2>${esc(p.name)}</h2><span class="wait">${ROLE_NAME[p.role]} · season ${signedMoney(p.season.net)}</span></div></div>
+    <div class="list">
+      ${owner ? (p.role === 'manager' ? '<button class="lrowbtn" id="ms-mem"><div class="lr-txt"><b>Make a member</b><span>Takes away manager tools</span></div></button>'
+        : '<button class="lrowbtn" id="ms-mgr"><div class="lr-txt"><b>Make a manager</b><span>Can let people in, invite, remove members and post</span></div></button>') : ''}
+      ${owner ? '<button class="lrowbtn" id="ms-own"><div class="lr-txt"><b>Hand the club over</b><span>They become the owner; you become a manager</span></div></button>' : ''}
+      <button class="lrowbtn danger" id="ms-rm"><div class="lr-txt"><b>Remove from club</b></div></button>
+      <button class="lrowbtn danger" id="ms-ban"><div class="lr-txt"><b>Remove and ban</b></div></button>
+    </div>`, () => {
+    const role = r => () => { closeModal(); send({ t: 'clubRole', id: C.id, user: p.id, role: r }); };
+    if ($('#ms-mgr')) $('#ms-mgr').onclick = role('manager');
+    if ($('#ms-mem')) $('#ms-mem').onclick = role('member');
+    if ($('#ms-own')) $('#ms-own').onclick = () => openModal(`<h2>Make ${esc(p.name)} the owner?</h2><p class="wait">They’ll run ${esc(C.name)}. You stay on as a manager, and only they can undo this.</p>
+      <div class="acts"><button class="btn" data-close>Cancel</button><button class="btn primary" id="own-go">Hand it over</button></div>`, () => { $('#own-go').onclick = role('owner'); });
+    $('#ms-rm').onclick = () => { closeModal(); send({ t: 'clubRemove', id: C.id, user: p.id, ban: false }); };
+    $('#ms-ban').onclick = () => { closeModal(); send({ t: 'clubRemove', id: C.id, user: p.id, ban: true }); };
+  });
+}
+function confirmLeaveClub(C) {
+  openModal(`<h2>Leave ${esc(C.name)}?</h2><p class="wait">Your results stay in its history. ${C.join === 'open' ? 'You can join again with the code.' : 'You’ll need a manager to let you back in.'}</p>
+    <div class="acts"><button class="btn" data-close>Stay</button><button class="btn primary" id="lc-go">Leave</button></div>`, () => {
+    $('#lc-go').onclick = () => { closeModal(); send({ t: 'clubLeave', id: C.id }); closeClubHome(); };
+  });
+}
+function openClubMore() {
+  const C = S.clubS;
+  openSheet(`<h2>${esc(C.name)}</h2><div class="list">
+    <button class="lrowbtn" id="mo-code">${TICON.key}<div class="lr-txt"><b>Copy club code</b><span>${esc(C.id)}</span></div></button>
+    <button class="lrowbtn danger" id="mo-leave"><div class="lr-txt"><b>Leave club</b></div></button></div>`, () => {
+    $('#mo-code').onclick = async () => { closeModal(); toast(await copy(C.id) ? 'Club code copied' : `Club code: ${C.id}`); };
+    $('#mo-leave').onclick = () => { closeModal(); confirmLeaveClub(C); };
+  });
+}
+function openClubSettings() {
+  const C = S.clubS, owner = C.role === 'owner';
+  const st = { name: C.name, glyph: C.crest.glyph, color: C.crest.color, join: C.join, room: C.room, note: C.announcement ? C.announcement.text : '' };
+  const draw = () => {
+    if ($('#cs-name')) st.name = $('#cs-name').value;
+    if ($('#cs-note')) st.note = $('#cs-note').value;
+    openSheet(`<h2>Club settings</h2>
+      <span class="lbl">Pinned message</span>
+      <textarea id="cs-note" maxlength="240" rows="3" placeholder="Game night is Thursday at 8" aria-label="Pinned message">${esc(st.note)}</textarea>
+      <button class="btn" id="cs-post">${st.note ? 'Pin message' : 'Clear pinned message'}</button>
+      ${owner ? `<span class="lbl">Name</span><input id="cs-name" maxlength="28" value="${esc(st.name)}" aria-label="Club name">
+      <span class="lbl">Crest</span>${crestPicker(st)}` : ''}
+      <span class="lbl">Who can join</span>${joinPicker(st.join)}
+      <p class="fine left cl-jt">${JOIN_TEXT[st.join]}</p>
+      ${owner ? `<span class="lbl">Club tables</span>${roomPicker(st.room)}` : ''}
+      <button class="btn primary" id="cs-save">Save</button>
+      ${owner ? '<button class="textbtn danger" id="cs-del">Delete club</button>' : '<p class="fine">The owner can change the name, crest and tables.</p>'}`, () => {
+      bindPickers(st, draw);
+      const note = $('#cs-note');
+      note.oninput = () => { $('#cs-post').textContent = note.value.trim() ? 'Pin message' : 'Clear pinned message'; };
+      $('#cs-post').onclick = () => { closeModal(); send({ t: 'clubAnnounce', id: C.id, text: note.value.trim() }); };
+      $('#cs-save').onclick = () => {
+        const set = { join: st.join };
+        if (owner) Object.assign(set, { name: $('#cs-name').value.trim(), glyph: st.glyph, color: st.color, room: st.room });
+        closeModal(); send({ t: 'clubUpdate', id: C.id, set });
+      };
+      const del = $('#cs-del');
+      if (del) del.onclick = () => openModal(`<h2>Delete ${esc(C.name)}?</h2><p class="wait">The club, its chat and standings are gone for everyone. Games already running finish normally.</p>
+        <div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary danger" id="cd-go">Delete</button></div>`, () => {
+        $('#cd-go').onclick = () => { closeModal(); send({ t: 'clubDelete', id: C.id }); closeClubHome(); };
+      });
+    });
+  };
+  draw();
 }
 
 function tabWallet() {
@@ -1267,12 +1640,12 @@ function tabBg() {
   };
   return { html, bind };
 }
-function openNewBoard(vsBot) {
+function openNewBoard(vsBot, opts = {}) {
   const st = { vsBot, stake: S.bgStake || 100, level: 'hard', isPrivate: false };
   const draw = () => openSheet(`<h2>Backgammon</h2>
     <div class="field"><span class="lbl">Opponent</span><div class="game-seg" role="radiogroup"><button role="radio" aria-checked="${st.vsBot}" data-op="bot">A bot</button><button role="radio" aria-checked="${!st.vsBot}" data-op="friend">A friend</button></div></div>
     ${st.vsBot ? `<div class="field"><span class="lbl">Bot</span><div class="game-seg" role="radiogroup"><button role="radio" aria-checked="${st.level === 'easy'}" data-lv="easy">Easy</button><button role="radio" aria-checked="${st.level === 'hard'}" data-lv="hard">Strong</button></div></div>`
-      : `<div class="field"><span class="lbl">Who can join</span><div class="game-seg" role="radiogroup"><button role="radio" aria-checked="${!st.isPrivate}" data-pv="0">Anyone</button><button role="radio" aria-checked="${st.isPrivate}" data-pv="1">Code only</button></div></div>`}
+      : opts.clubId ? '' : `<div class="field"><span class="lbl">Who can join</span><div class="game-seg" role="radiogroup"><button role="radio" aria-checked="${!st.isPrivate}" data-pv="0">Anyone</button><button role="radio" aria-checked="${st.isPrivate}" data-pv="1">Code only</button></div></div>`}
     <div class="field"><span class="lbl">Stake per point</span><div class="books">${BG_STAKES.map(c => `<button class="book" aria-pressed="${st.stake === c}" data-stake="${c}"><span class="cover">${money(c)}</span><span class="buy">buy-in ${money(c * BG_BUYIN_POINTS)}</span></button>`).join('')}</div></div>
     <p class="fine left">A game is worth 1 point, a gammon 2, a backgammon 3, times the cube. Your buy-in covers ${BG_BUYIN_POINTS} points; leave any time between games and the rest goes back to your balance.</p>
     <button class="btn primary" id="bg-go" ${S.me.bankroll < st.stake * BG_BUYIN_POINTS ? 'disabled' : ''}>${S.me.bankroll < st.stake * BG_BUYIN_POINTS ? 'Not enough in your balance' : `Sit down · ${money(st.stake * BG_BUYIN_POINTS)}`}</button>`, () => {
@@ -1280,7 +1653,7 @@ function openNewBoard(vsBot) {
     document.querySelectorAll('[data-lv]').forEach(b => b.onclick = () => { st.level = b.dataset.lv; draw(); });
     document.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { st.isPrivate = b.dataset.pv === '1'; draw(); });
     document.querySelectorAll('[data-stake]').forEach(b => b.onclick = () => { st.stake = +b.dataset.stake; S.bgStake = st.stake; draw(); });
-    $('#bg-go').onclick = () => { closeModal(); S.bg = null; S.view = 'bg'; renderBgWait(); send({ t: 'bgCreate', stake: st.stake, vsBot: st.vsBot, level: st.level, isPrivate: st.isPrivate }); };
+    $('#bg-go').onclick = () => { closeModal(); S.bg = null; S.view = 'bg'; renderBgWait(); send({ t: 'bgCreate', stake: st.stake, vsBot: st.vsBot, level: st.level, isPrivate: st.isPrivate, clubId: opts.clubId }); };
   });
   draw();
 }
@@ -1879,7 +2252,7 @@ function renderStage() {
       <div class="sp2 ${side} ${specialOf(s.avatar) ? 'vip sp-' + specialOf(s.avatar) : ''}">
         ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
         <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
-        <div class="sp-plate" style="--pc:${DOTC[((s.avatar && s.avatar.c) || 0) % DOTC.length]}"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
+        <div class="sp-plate" style="--pc:${DOTC[((s.avatar && s.avatar.c) || 0) % DOTC.length]}"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}${(T.champSeats || []).includes(i) ? `<span class="champmark" role="img" aria-label="Club champion">${crownSVG()}</span>` : ''}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
         ${under ? `<span class="sp-under ${utone}">${under}</span>` : ''}
         ${fan ? `<div class="sp-fan n${s.cards.length} ${shown ? 'up' : ''} ${isMe ? 'myc' : ''}">${fan}</div>` : ''}
       </div>

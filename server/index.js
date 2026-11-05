@@ -21,6 +21,8 @@ const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
 const stamp = (u, avatar) => ({ ...avatar, vip: u.vip ? 1 : 0 });
 const { createManager } = require('./tourneys');
 const { createRooms } = require('./bgrooms');
+const { createClubs } = require('./clubs');
+const { createClubHub } = require('./clubhub');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -42,7 +44,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let p = url.pathname;
   if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
-  if (p === '/' || /^\/t\/[A-Za-z0-9]{3,8}\/?$/.test(p)) p = '/index.html';
+  if (p === '/' || /^\/[tc]\/[A-Za-z0-9]{3,8}\/?$/.test(p)) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC, p));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
@@ -90,9 +92,23 @@ function broadcastTable(t) {
   t._bcast = true;
   setImmediate(() => {
     t._bcast = false;
-    for (const c of clients) if (c.code === t.code) send(c, { t: 'state', s: t.view(c.userId) });
+    for (const c of clients) if (c.code === t.code) send(c, { t: 'state', s: tableState(t, c.userId) });
   });
 }
+// A table's view, plus its club's room and which seat holds the club's reigning champion.
+function tableState(t, userId) {
+  const s = t.view(userId);
+  if (t.clubId && clubsRef) {
+    const club = clubsRef.find(t.clubId);
+    if (club) {
+      s.club = { id: club.id, name: club.name, room: club.room };
+      const champ = club.champions[0] && club.champions[0].uid;
+      s.champSeats = champ ? t.seats.map((x, i) => (x && x.userId === champ ? i : -1)).filter(i => i >= 0) : [];
+    }
+  }
+  return s;
+}
+let clubsRef = null;
 function toTable(t, msg) {
   const s = JSON.stringify(msg);
   for (const c of clients) if (c.code === t.code) c.ws.send(s);
@@ -125,6 +141,7 @@ const hooks = {
       if (!u) continue;
       store.recordHand(u, r);
       u.atTables[t.code] = r.chips;
+      if (t.clubId && clubsRef) clubsRef.record(t.clubId, r.userId, r.delta);
     }
     store.save();
     for (const r of summary) if (r.kind === 'human') sendMe(r.userId);
@@ -165,10 +182,11 @@ const tm = createManager({
       if (!watchingTourney && !c.followTourney) continue;
       c.code = code;
       send(c, { t: 'moved', code });
-      if (t) { send(c, { t: 'chat', items: t.chat, reset: true }); send(c, { t: 'state', s: t.view(c.userId) }); }
+      if (t) { send(c, { t: 'chat', items: t.chat, reset: true }); send(c, { t: 'state', s: tableState(t, c.userId) }); }
     }
   },
   changed: tour => tourneyChanged(tour),
+  onResult(tour, p, info) { if (tour.clubId && clubsRef && p.userId) clubsRef.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn); },
 });
 let tourTimer = null;
 const dirtyTours = new Set();
@@ -216,8 +234,31 @@ const bg = createRooms({
   },
   notify: (userId, msg) => notifyUser(userId, msg),
   changed: () => lobbyChanged(),
+  onGame(room, w, l, paid) {
+    if (!room.clubId || !clubsRef) return;
+    if (w && w.kind === 'human') clubsRef.record(room.clubId, w.userId, paid);
+    if (l && l.kind === 'human') clubsRef.record(room.clubId, l.userId, -paid);
+  },
 });
 bgRef = bg;
+
+// ---------- clubs ----------
+let hub = null;
+const clubs = createClubs({
+  store, save: () => store.save(), makeId: makeCode,
+  clubActive: u => { shop.ensure(u); return !!(u.club && u.club.active); },
+  notify: (userId, msg) => notifyUser(userId, msg),
+  changed: club => { if (hub) hub.push(club); },
+});
+clubsRef = clubs;
+hub = createClubHub(clubs, {
+  send, clients: () => clients,
+  tablesFor: id => [...tables.values()].filter(t => t.clubId === id).map(t => t.summary()),
+  tourneysFor: (id, uid) => [...tm.tours.values()].filter(t => t.clubId === id && t.status !== 'canceled').map(t => t.summary(uid)),
+  boardsFor: id => bg.forClub(id),
+});
+setInterval(() => clubs.tick(), 60000).unref();
+const notMember = (clubId, c) => clubId && !clubs.isMember(clubId, c.userId);
 setInterval(() => bg.sweep(), 60000).unref();
 
 // ---------- messages ----------
@@ -225,7 +266,10 @@ const handlers = {
   // ---- backgammon ----
   bgCreate(c, m) {
     const u = store.byId(c.userId); if (!u) return;
-    const r = bg.create(u.id, { name: u.name, avatar: u.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate });
+    const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
+    if (clubId && notMember(clubId, c)) return send(c, { t: 'error', message: 'Join the club to start its games' });
+    const r = bg.create(u.id, { name: u.name, avatar: u.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate, clubId });
+    if (clubId) { const club = clubs.find(clubId); if (club) hub.push(club); }
     if (r.err) return send(c, { t: 'error', message: r.err });
     c.bg = r.code;
     send(c, { t: 'bgState', s: bg.view(r.code, u.id) });
@@ -235,6 +279,7 @@ const handlers = {
     const code = String(m.code || '').toUpperCase();
     const s = bg.view(code, c.userId);
     if (!s) return send(c, { t: 'bgGone', code });
+    if (s.mySeat < 0 && notMember(s.clubId, c)) return send(c, { t: 'error', message: 'This board is for club members' });
     c.bg = code;
     if (s.mySeat >= 0) bg.setConnected(c.userId, true);
     send(c, { t: 'bgState', s: bg.view(code, c.userId) });
@@ -242,6 +287,8 @@ const handlers = {
   bgClose(c) { c.bg = null; },
   bgSit(c, m) {
     const u = store.byId(c.userId); if (!u) return;
+    const room = bg.rooms.get(String(m.code || c.bg || ''));
+    if (room && notMember(room.clubId, c)) return send(c, { t: 'error', message: 'This board is for club members' });
     const err = bg.sit(u.id, { name: u.name, avatar: u.avatar }, String(m.code || c.bg || ''));
     if (err) send(c, { t: 'error', message: err });
   },
@@ -262,9 +309,9 @@ const handlers = {
   tourneys(c) { send(c, { t: 'tourneys', list: tm.list(c.userId) }); },
   tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, c.userId); if (!d) return send(c, { t: 'error', message: 'That tournament doesn’t exist' }); send(c, { t: 'tourney', d }); },
   tUnwatch(c) { c.tview = null; },
-  tReg(c, m) { const e = tm.register(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); c.followTourney = true; send(c, { t: 'notice', message: 'You’re registered' }); tourneyChanged(tm.tours.get(m.id)); },
+  tReg(c, m) { const tour = tm.tours.get(m.id); if (tour && notMember(tour.clubId, c)) return send(c, { t: 'error', message: 'This tournament is for club members' }); const e = tm.register(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); c.followTourney = true; send(c, { t: 'notice', message: 'You’re registered' }); tourneyChanged(tm.tours.get(m.id)); },
   tUnreg(c, m) { const e = tm.unregister(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); send(c, { t: 'notice', message: 'Unregistered. Your buy-in is back in your balance.' }); },
-  tHost(c, m) { const t = tm.host(c.userId, m); c.tview = t.id; send(c, { t: 'tourneyHosted', id: t.id }); send(c, { t: 'tourney', d: t.detail(c.userId) }); },
+  tHost(c, m) { if (m.clubId && notMember(String(m.clubId).toUpperCase(), c)) return send(c, { t: 'error', message: 'Join the club to host its tournaments' }); const t = tm.host(c.userId, { ...m, clubId: m.clubId ? String(m.clubId).toUpperCase() : null }); if (t.clubId) { const club = clubs.find(t.clubId); if (club) hub.push(club); } c.tview = t.id; send(c, { t: 'tourneyHosted', id: t.id }); send(c, { t: 'tourney', d: t.detail(c.userId) }); },
   tStart(c, m) { const e = tm.start(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); },
   tBots(c, m) { const e = tm.addBots(c.userId, m.id, Number(m.n)); if (e) return send(c, { t: 'error', message: e }); },
   tSeat(c, m) {
@@ -455,7 +502,10 @@ const handlers = {
     const stakes = STAKES[m.stakes] || STAKES['10-25'];
     const code = makeCode();
     const name = cleanText(m.name, 28) || `${u.name}'s table`;
-    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
+    const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
+    if (clubId && notMember(clubId, c)) return send(c, { t: 'error', message: 'Join the club to start its games' });
+    const t = new Table({ code, name, sb: stakes[0], bb: stakes[1], hostId: u.id, isPrivate: !!m.isPrivate || !!clubId, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
+    if (clubId) { t.clubId = clubId; const club = clubs.find(clubId); if (club) hub.push(club); }
     tables.set(code, t);
     send(c, { t: 'created', code });
     lobbyChanged();
@@ -464,11 +514,12 @@ const handlers = {
   join(c, m) {
     const t = tables.get(String(m.code || '').toUpperCase());
     if (!t) return send(c, { t: 'notFound', code: m.code });
+    if (notMember(t.clubId, c)) { const club = clubs.find(t.clubId); return send(c, { t: 'error', message: `This table is for members of ${club ? club.name : 'a club'}` }); }
     if (c.code && c.code !== t.code) handlers.leave(c, { keepSeat: true });
     c.code = t.code;
     send(c, { t: 'chat', items: t.chat, reset: true });
     if (c.userId && t.seatOf(c.userId) >= 0) t.setConnected(c.userId, true);
-    send(c, { t: 'state', s: t.view(c.userId) });
+    send(c, { t: 'state', s: tableState(t, c.userId) });
   },
 
   leave(c, m = {}) {
@@ -563,6 +614,8 @@ const handlers = {
     if (s && s.kind === 'bot') t.removeSeat(Number(m.seat));
   },
 };
+
+Object.assign(handlers, hub.handlers);
 
 attach(server, ws => {
   const c = { ws, userId: null, code: null };

@@ -51,6 +51,8 @@ ${mod('bgbot', 'server/bgbot.js')}
 ${mod('bgrooms', 'server/bgrooms.js')}
 ${mod('tournament', 'server/tournament.js')}
 ${mod('tourneys', 'server/tourneys.js')}
+${mod('clubs', 'server/clubs.js')}
+${mod('clubhub', 'server/clubhub.js')}
 ${read('preview/sim.js')}
 </script>
 <script>

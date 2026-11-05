@@ -319,7 +319,7 @@ class Tournament {
       prizePool: this.sng && this.status === 'registering' ? this.maxPlayers * this.buyIn : this.prizePool,
       level: this.level + 1, ...this.blinds(), nextLevelMs: this.nextLevelMs(), lateReg: this.lateRegOpen(), reentries: this.reentries,
       hosted: !!this.hostId, isPrivate: this.isPrivate, levelMin: Math.round(this.levelMs / 60000),
-      sng: this.sng, maxPlayers: this.maxPlayers, tier: this.tier,
+      sng: this.sng, maxPlayers: this.maxPlayers, tier: this.tier, clubId: this.clubId || null,
       me: me ? { status: me.status, place: me.place, prize: me.prize, table: me.table, entries: me.entries, canEnter: !this.canEnter(me.key) } : null,
     };
   }

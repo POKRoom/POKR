@@ -5,7 +5,7 @@
 //   UPSTASH_REDIS_REST_URL    https://<name>.upstash.io
 //   UPSTASH_REDIS_REST_TOKEN  the REST token (keep it secret; it's a password)
 //
-// Layout: one hash, "pokr:users", field = user id, value = that user as JSON;
+// Layout: hashes "pokr:users" and "pokr:clubs" (field = id, value = JSON),
 // and one list, "pokr:ledger", of ledger lines.
 
 function fromEnv(env = process.env) {
@@ -28,20 +28,24 @@ function client(url, token) {
     const out = await r.json();
     return out.map(x => { if (x.error) throw new Error('Upstash: ' + x.error); return x.result; });
   }
+  async function loadHash(key) {
+    const [flat] = await pipeline([['HGETALL', key]]);
+    const out = [];
+    for (let i = 0; i + 1 < (flat || []).length; i += 2) {
+      try { out.push(JSON.parse(flat[i + 1])); } catch { console.error(`cloud: skipped an unreadable entry in ${key}`, flat[i]); }
+    }
+    return out;
+  }
+  async function saveHash(key, pairs) { // [[id, json], ...]
+    if (pairs.length) await pipeline([['HSET', key, ...pairs.flat()]]);
+  }
   return {
     where: url.replace(/^https?:\/\//, ''),
-    async loadUsers() {
-      const [flat] = await pipeline([['HGETALL', 'pokr:users']]);
-      const users = [];
-      for (let i = 0; i + 1 < (flat || []).length; i += 2) {
-        try { users.push(JSON.parse(flat[i + 1])); } catch { console.error('cloud: skipped an unreadable user', flat[i]); }
-      }
-      return users;
-    },
-    async saveUsers(pairs) { // [[id, json], ...]
-      if (!pairs.length) return;
-      await pipeline([['HSET', 'pokr:users', ...pairs.flat()]]);
-    },
+    loadUsers: () => loadHash('pokr:users'),
+    saveUsers: pairs => saveHash('pokr:users', pairs),
+    loadClubs: () => loadHash('pokr:clubs'),
+    saveClubs: pairs => saveHash('pokr:clubs', pairs),
+    async deleteClub(id) { await pipeline([['HDEL', 'pokr:clubs', id]]); },
     async appendLedger(line) { await pipeline([['RPUSH', 'pokr:ledger', line]]); },
   };
 }

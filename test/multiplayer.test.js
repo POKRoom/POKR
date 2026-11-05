@@ -147,6 +147,37 @@ const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn()) { 
   const ledger = fs.readFileSync(path.join(DATA, 'ledger.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.ok(ledger.some(l => l.type === 'buyin') && ledger.some(l => l.type === 'cashout'), 'ledger written');
 
+  // clubs over the wire: Pro Pass to start one, approval to get in, members-only tables
+  const got = (p, t) => new Promise(r => p.on(m => { if (m.t === t) r(m); }));
+  d.send({ t: 'clubCreate', name: 'Wire Club' });
+  await until(() => d.errors.some(e => /Pro Pass/.test(e)));
+  d.send({ t: 'club', action: 'join' });
+  await until(() => d.me.club && d.me.club.active);
+  const made = got(d, 'clubState');
+  d.send({ t: 'clubCreate', name: 'Wire Club', join: 'approval', room: 'teal' });
+  const club = (await made).s;
+  assert.ok(club.member && club.role === 'owner', 'owner sees the club');
+  const asked = got(a, 'clubState');
+  a.send({ t: 'clubJoin', id: club.id });
+  assert.ok((await asked).s.requested, 'approval club takes a request');
+  const inState = got(a, 'clubState');
+  d.send({ t: 'clubAnswer', id: club.id, user: a.me.id, yes: true });
+  assert.ok((await inState).s.member, 'manager lets them in');
+  const created = got(d, 'created');
+  d.send({ t: 'create', name: 'Club table', stakes: '10-25', clubId: club.id });
+  const ccode = (await created).code;
+  b.send({ t: 'join', code: ccode });
+  await until(() => b.errors.some(e => /members of Wire Club/.test(e)));
+  const seen = got(a, 'state');
+  a.send({ t: 'join', code: ccode });
+  const cs = (await seen).s;
+  assert.strictEqual(cs.club && cs.club.room, 'teal', 'club table carries the club room');
+  const chatIn = new Promise(r => d.on(m => { if (m.t === 'clubState' && m.s.chat.some(x => x.text === 'gg')) r(); }));
+  d.send({ t: 'clubOpen', id: club.id });
+  a.send({ t: 'clubChat', id: club.id, text: 'gg' });
+  await chatIn;
+  console.log('clubs checked over WebSockets: Pro Pass gate, approval, members-only table, chat');
+
   console.log(`played ${a.state.handNo} hands over WebSockets; bankrolls: ${[a, b, c].map(p => `${p.name} ${p.me.bankroll}`).join(', ')}`);
   console.log('accounts checked; no card leaks, chips conserved, chat/reactions delivered, ledger written');
   console.log('multiplayer test passed');

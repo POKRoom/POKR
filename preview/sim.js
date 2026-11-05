@@ -8,6 +8,9 @@
   const looks = require('./looks');
   const { createManager } = require('./tourneys');
   const { createRooms } = require('./bgrooms');
+  const { createClubs } = require('./clubs');
+  const { createClubHub } = require('./clubhub');
+  const { ROSTER } = require('./bots');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
   const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
   const BANTER = {
@@ -81,7 +84,7 @@
     onChange(t) {
       if (t._q) return;
       t._q = true;
-      setTimeout(() => { t._q = false; dressBots(t); if (client && client.code === t.code) out({ t: 'state', s: t.view(db.user && db.user.id) }); }, 0);
+      setTimeout(() => { t._q = false; dressBots(t); if (client && client.code === t.code) out({ t: 'state', s: tview(t) }); }, 0);
     },
     onHandEnd(t, summary) {
       for (const r of summary) {
@@ -92,8 +95,10 @@
           if (r.won > st.biggestPot) st.biggestPot = r.won;
           (db.user.hist || (db.user.hist = [])).push({ ts: Date.now(), d: r.delta, w: r.won }); if (db.user.hist.length > 3000) db.user.hist.shift();
           db.user.atTables[t.code] = r.chips;
+          if (t.clubId) clubs.record(t.clubId, db.user.id, r.delta);
         } else if (r.kind === 'bot') {
           const s = t.seats[r.seat];
+          if (t.clubId) clubs.record(t.clubId, 'bot:' + s.name, r.delta);
           const b = db.bots[s.name] || (db.bots[s.name] = { hands: 0, net: 0, won: 0, biggest: 0, c: s.avatar.c });
           b.hands++; b.net += r.delta; if (r.won > 0 && r.delta > 0) b.won++; if (r.won > b.biggest) b.biggest = r.won;
         }
@@ -136,13 +141,14 @@
     credit(userId, cents) { const u = db.user; if (!u || !cents) return; u.bankroll += cents; persist(); sendMe(); },
     userInfo() { return { name: db.user.name, avatar: db.user.avatar }; },
     notify(userId, msg) { out(msg); },
+    onResult(tour, p, info) { if (tour.clubId && p.userId) clubs.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn); },
     moveClient(userId, code) {
       if (!client) return;
       if (!(client.code && tm.byTable.has(client.code)) && !client.followTourney) return;
       const t = tables.get(code);
       client.code = code;
       out({ t: 'moved', code });
-      if (t) { out({ t: 'chat', items: t.chat, reset: true }); out({ t: 'state', s: t.view(db.user.id) }); }
+      if (t) { out({ t: 'chat', items: t.chat, reset: true }); out({ t: 'state', s: tview(t) }); }
     },
     changed(tour) {
       if (tourTimer) return;
@@ -170,14 +176,109 @@
     setAt(userId, code, cents) { const u = db.user; if (!u) return; if (cents == null) delete u.atTables['bg:' + code]; else u.atTables['bg:' + code] = cents; persist(); sendMe(); },
     notify(userId, msg) { out(msg); },
     changed() {},
+    onGame(room, w, l, paid) {
+      if (!room.clubId) return;
+      const id = p => (p.kind === 'human' ? p.userId : 'bot:' + p.name);
+      if (w) clubs.record(room.clubId, id(w), paid);
+      if (l) clubs.record(room.clubId, id(l), -paid);
+    },
   });
+  // ---------- clubs (same rules and messages as the real server) ----------
+  // The preview keeps clubs in this browser. One club is already running, full of bots, so there's
+  // something to look at; you can join it, or start your own with Pro Pass.
+  const botUser = name => {
+    const b = ROSTER.find(x => x.name === name);
+    const ch = (db.botLooks || {})[name];
+    return b ? { id: 'bot:' + name, name, avatar: { ...(ch ? withLook(ch) : { a: -1, c: b.color }), vip: (db.botVip || {})[name] ? 1 : 0 } } : null;
+  };
+  const clubMap = new Map(Object.entries(db.clubs || {}));
+  const saveClubs = () => { db.clubs = Object.fromEntries(clubMap); persist(); };
+  const clubs = createClubs({
+    store: {
+      clubs: clubMap,
+      byId: id => (db.user && id === db.user.id ? db.user : String(id).startsWith('bot:') ? botUser(String(id).slice(4)) : null),
+      dropClub: id => { clubMap.delete(id); saveClubs(); },
+    },
+    save: saveClubs,
+    clubActive: u => { shop.ensure(u); return !!(u.club && u.club.active); },
+    notify: (userId, msg) => { if (db.user && userId === db.user.id) out(msg); },
+    changed: club => hub.push(club),
+    makeId: () => { let id; do id = makeCode(); while (clubMap.has(id)); return id; },
+  });
+  const hub = createClubHub(clubs, {
+    send: (c, msg) => out(msg),
+    clients: () => (client && db.user ? [client] : []),
+    tablesFor: id => [...tables.values()].filter(t => t.clubId === id).map(t => t.summary()),
+    tourneysFor: (id, uid) => [...tm.tours.values()].filter(t => t.clubId === id && t.status !== 'canceled').map(t => t.summary(uid)),
+    boardsFor: id => bg.forClub(id),
+  });
+  const clubHandlers = {};
+  for (const [k, fn] of Object.entries(hub.handlers)) clubHandlers[k] = (c, m) => {
+    c.userId = db.user.id;
+    // first visit: you're already a member of the demo club, so there's something to see
+    if (!db.clubDemo) { db.clubDemo = true; const cl = clubs.find('NIGHT'); if (cl && !cl.members[db.user.id]) clubs.join(db.user.id, 'NIGHT'); }
+    fn(c, m);
+  };
+  setInterval(() => clubs.tick(), 60000);
+  function tview(t) {
+    const s = t.view(db.user && db.user.id);
+    const cl = t.clubId && clubs.find(t.clubId);
+    if (cl) {
+      s.club = { id: cl.id, name: cl.name, room: cl.room };
+      const champ = cl.champions[0] && cl.champions[0].uid;
+      s.champSeats = champ ? t.seats.map((x, i) => (x && (x.userId === champ || (x.kind === 'bot' && 'bot:' + x.name === champ)) ? i : -1)).filter(i => i >= 0) : [];
+    }
+    return s;
+  }
+  // The demo club: an owner, a few managers, a season under way and last month's champion.
+  if (!clubMap.has('NIGHT')) {
+    const now = Date.now(), DAY = 864e5;
+    const names = ROSTER.map(b => b.name).slice(0, 14);
+    const ym = new Date(now).toISOString().slice(0, 7);
+    const prev = new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    const c = {
+      id: 'NIGHT', name: 'Thursday Night', ownerId: 'bot:' + names[0], createdAt: now - 70 * DAY,
+      crest: { glyph: 2, color: 1 }, join: 'open', room: 'burgundy',
+      members: {}, requests: {}, bans: [], invites: {}, chat: [], results: {},
+      announcement: { text: 'Club game every Thursday at 8. Bring snacks, not excuses.', by: 'bot:' + names[0], at: now - 2 * DAY },
+      season: { n: 3, ym, startedAt: now - 9 * DAY }, champions: [],
+    };
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    names.forEach((n, i) => {
+      const uid = 'bot:' + n;
+      c.members[uid] = { role: i === 0 ? 'owner' : i < 3 ? 'manager' : 'member', joinedAt: now - (70 - i * 3) * DAY };
+      const days = {};
+      let season = 0, games = 0;
+      for (let d = 0; d < 7; d++) if (rnd() < 0.55) { const v = Math.round((rnd() - 0.45) * 40) * 250; days[new Date(now - d * DAY).toISOString().slice(0, 10)] = v; season += v; games += 1 + Math.floor(rnd() * 6); }
+      const extra = Math.round((rnd() - 0.45) * 60) * 500;
+      c.results[uid] = { all: { net: season + extra * 3, games: games + 20 + Math.floor(rnd() * 80) }, season: { net: season + extra, games: games + 4 }, days };
+    });
+    c.champions = [{ ym: prev, n: 2, uid: 'bot:' + names[4], name: names[4], net: 186500 }, { ym: '', n: 1, uid: 'bot:' + names[1], name: names[1], net: 94250 }];
+    const lines = [[1, 'who’s in tonight'], [5, 'me, after I lose this SNG'], [2, 'table’s up, 25/50'], [7, 'save me a seat'], [4, 'defending the title, try me']];
+    lines.forEach(([i, text], k) => c.chat.push({ id: 'seed' + k, uid: 'bot:' + names[i], name: names[i], text, at: now - (lines.length - k) * 41 * 60000 }));
+    clubMap.set(c.id, c);
+    saveClubs();
+  }
+  // Its table is running, with bots.
+  {
+    const code = makeCode();
+    const t = new Table({ code, name: 'Thursday Night 25/50', sb: 25, bb: 50, hostId: 'house', isPrivate: true, game: 'nlh', maxSeats: 6 }, hooks);
+    t.clubId = 'NIGHT';
+    tables.set(code, t);
+    [1, 2, 4].forEach(i => t.addBot(i));
+  }
 
   const H = {
+    ...clubHandlers,
     // ---- backgammon ----
     bgCreate(c, m) {
       if (!db.user) return;
-      const r = bg.create(db.user.id, { name: db.user.name, avatar: db.user.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate });
+      const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
+      if (clubId && !clubs.isMember(clubId, db.user.id)) return out({ t: 'error', message: 'Join the club to start its games' });
+      const r = bg.create(db.user.id, { name: db.user.name, avatar: db.user.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate, clubId });
       if (r.err) return out({ t: 'error', message: r.err });
+      if (clubId) { const cl = clubs.find(clubId); if (cl) hub.push(cl); }
       c.bg = r.code;
       out({ t: 'bgState', s: bg.view(r.code, db.user.id) });
     },
@@ -185,6 +286,7 @@
       const code = String(m.code || '').toUpperCase();
       const s = bg.view(code, db.user.id);
       if (!s) return out({ t: 'bgGone', code });
+      if (s.mySeat < 0 && s.clubId && !clubs.isMember(s.clubId, db.user.id)) return out({ t: 'error', message: 'This board is for club members' });
       c.bg = code;
       if (s.mySeat >= 0) bg.setConnected(db.user.id, true);
       out({ t: 'bgState', s: bg.view(code, db.user.id) });
@@ -202,9 +304,13 @@
     tourneys() { out({ t: 'tourneys', list: tm.list(db.user.id) }); },
     tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, db.user.id); if (!d) return out({ t: 'error', message: 'That tournament doesn’t exist' }); out({ t: 'tourney', d }); },
     tUnwatch(c) { c.tview = null; },
-    tReg(c, m) { const e = tm.register(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); c.followTourney = true; out({ t: 'notice', message: 'You’re registered' }); tm.tours.get(m.id) && tm.tours.get(m.id)._changed(); },
+    tReg(c, m) { const tour = tm.tours.get(m.id); if (tour && tour.clubId && !clubs.isMember(tour.clubId, db.user.id)) return out({ t: 'error', message: 'This tournament is for club members' }); const e = tm.register(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); c.followTourney = true; out({ t: 'notice', message: 'You’re registered' }); tm.tours.get(m.id) && tm.tours.get(m.id)._changed(); },
     tUnreg(c, m) { const e = tm.unregister(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); out({ t: 'notice', message: 'Unregistered. Your buy-in is back in your balance.' }); },
-    tHost(c, m) { const t = tm.host(db.user.id, m); c.tview = t.id; out({ t: 'tourneyHosted', id: t.id }); out({ t: 'tourney', d: t.detail(db.user.id) }); },
+    tHost(c, m) {
+      const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
+      if (clubId && !clubs.isMember(clubId, db.user.id)) return out({ t: 'error', message: 'Join the club to host its tournaments' });
+      const t = tm.host(db.user.id, { ...m, clubId });
+      if (clubId) { const cl = clubs.find(clubId); if (cl) hub.push(cl); } c.tview = t.id; out({ t: 'tourneyHosted', id: t.id }); out({ t: 'tourney', d: t.detail(db.user.id) }); },
     tStart(c, m) { const e = tm.start(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); },
     tBots(c, m) { const e = tm.addBots(db.user.id, m.id, Number(m.n)); if (e) return out({ t: 'error', message: e }); },
     tSeat(c, m) {
@@ -348,19 +454,23 @@
     },
     create(c, m) {
       const st = STAKES[m.stakes] || STAKES['10-25'];
+      const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
+      if (clubId && !clubs.isMember(clubId, db.user.id)) return out({ t: 'error', message: 'Join the club to start its games' });
       const code = makeCode();
-      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
+      const t = new Table({ code, name: String(m.name || '').trim().slice(0, 28) || `${db.user.name}'s table`, sb: st[0], bb: st[1], hostId: db.user.id, isPrivate: !!m.isPrivate || !!clubId, game: m.game === 'plo' ? 'plo' : 'nlh', maxSeats: Math.max(5, Math.min(9, Math.floor(m.seats) || 6)) }, hooks);
       tables.set(code, t);
+      if (clubId) { t.clubId = clubId; const cl = clubs.find(clubId); if (cl) hub.push(cl); }
       const n = t.seats.length; [...new Set([Math.round(n / 4), Math.round(n / 2), Math.round(3 * n / 4)])].forEach(i => t.addBot(i));
       out({ t: 'created', code });
     },
     join(c, m) {
       const t = tables.get(String(m.code || '').toUpperCase());
       if (!t) return out({ t: 'notFound', code: m.code });
+      if (t.clubId && !clubs.isMember(t.clubId, db.user.id)) { const cl = clubs.find(t.clubId); return out({ t: 'error', message: `This table is for members of ${cl ? cl.name : 'a club'}` }); }
       c.code = t.code;
       out({ t: 'chat', items: t.chat, reset: true });
       if (t.seatOf(db.user.id) >= 0) t.setConnected(db.user.id, true);
-      out({ t: 'state', s: t.view(db.user.id) });
+      out({ t: 'state', s: tview(t) });
       if (!t.chat.length && !isTourneyTable(t)) botSay(t, 3, 'gl all', 1200);
     },
     leave(c, m) {
