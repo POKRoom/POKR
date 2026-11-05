@@ -337,7 +337,7 @@ function onMessage(m) {
     }
     case 'bgState': S.bg = m.s; if (S.view === 'bg') renderBg(); break;
     case 'bgGone': toast('That board has closed'); if (S.view === 'bg') { S.bg = null; renderTabs(); } break;
-    case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social')) renderTabs(); else if (S.view === 'alltables') renderAllTables(); break;
+    case 'lobby': S.lobby = m; if (S.view === 'tabs' && (S.tab === 'play' || S.tab === 'social' || S.tab === 'bg')) renderTabs(); else if (S.view === 'alltables') renderAllTables(); break;
     case 'created': nav('/t/' + m.code); joinCode(m.code); break;
     case 'state': {
       const fresh = S.view !== 'table' || !S.table || S.table.code !== m.s.code || !$('#stage');
@@ -618,6 +618,7 @@ const PERIODS = [['day', 'Last 24 hours'], ['week', 'Last 7 days'], ['month', 'L
 const TICON = {
   play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path class="f" d="M12 3C12 3 5 9 5 13.2C5 15.4 6.8 17 8.9 17C10.2 17 11.2 16.4 11.6 15.7L10.6 20.5H13.4L12.4 15.7C12.8 16.4 13.8 17 15.1 17C17.2 17 19 15.4 19 13.2C19 9 12 3 12 3Z"/></svg>',
   games: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="3" y="7" width="18" height="10" rx="5"/><path d="M8 12h.01M12 12h.01M16 12h.01" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  bg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="4" y="4" width="16" height="16" rx="4"/><path class="pips" d="M8.6 8.6h.01M15.4 8.6h.01M12 12h.01M8.6 15.4h.01M15.4 15.4h.01" stroke-width="2.6" stroke-linecap="round"/></svg>',
   social: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle class="f" cx="9" cy="8.5" r="3.5"/><path class="f" d="M2.8 19.5c.6-3.3 3.1-5.2 6.2-5.2s5.6 1.9 6.2 5.2Z"/><path d="M16 5.2a3.4 3.4 0 0 1 0 6.6M18 14.6c1.9.6 3.1 2.4 3.4 4.9"/></svg>',
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect class="f" x="3" y="6" width="18" height="13" rx="3"/><path d="M3 9.5h18M16 14h2"/></svg>',
   me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle class="f" cx="12" cy="8.5" r="4"/><path class="f" d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6Z"/></svg>',
@@ -628,7 +629,7 @@ const TICON = {
 };
 const suitIcon = i => `<svg viewBox="0 0 24 24" class="suit"><g class="f" fill="currentColor">${SUIT_SVG[i]}</g></svg>`;
 TICON.play = suitIcon(0); TICON.games = suitIcon(1); TICON.social = suitIcon(3); TICON.wallet = suitIcon(2);
-const TABS = [['play', 'Play'], ['games', 'Home games'], ['tourneys', 'Tournaments'], ['social', 'Social'], ['me', 'Profile']];
+const TABS = [['play', 'Play'], ['games', 'Home games'], ['bg', 'Backgammon'], ['tourneys', 'Tourneys'], ['social', 'Social'], ['me', 'Profile']];
 
 function renderTabs() {
   S.view = 'tabs';
@@ -638,7 +639,7 @@ function renderTabs() {
   const same = S.lastTab === S.tab && S.lastPainted === 'tabs';
   const y = same ? window.scrollY : 0;
   const keepX = ['#hs-track', '.gscroll'].map(q => { const e = document.querySelector(q); return e ? e.scrollLeft : 0; });
-  const body = { play: tabPlay, games: tabGames, tourneys: tabTourneys, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
+  const body = { play: tabPlay, games: tabGames, bg: tabBg, tourneys: tabTourneys, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
       ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
@@ -920,19 +921,18 @@ function tabPlay() {
       ${!S.lobby ? skelRows(2) : list.length ? `<div class="glist">${list.slice(0, 6).map(tableRow).join('')}${list.length > 6 ? `<button class="grow more" id="view-all3"><span class="gr-main"><b>All ${list.length} tables</b></span>${TICON.chev}</button>` : ''}</div>`
         : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No tables match.</p><p class="sub"><button class="linkbtn" id="clear-f">Clear filters</button> or tap + to start one.</p></div>`}
     </section>
-    ${bgSection()}
     <p class="fine">Play money only for now. No real money.</p>`;
   const bind = () => {
     $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
     $('#to-me').onclick = () => { S.tab = 'me'; renderTabs(); };
     bindGameChips(renderTabs);
     bindTourneysSection();
-    bindBgSection();
     if ($('#clear-f')) $('#clear-f').onclick = () => { S.gameFilter = 'all'; S.blindFilter = 'all'; S.hideFull = false; renderTabs(); };
     if ($('#hero-new')) $('#hero-new').onclick = openNewTable;
     ['#view-all', '#view-all2', '#view-all3'].forEach(id => { const b = $(id); if (b) b.onclick = renderAllTables; });
     app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
     app.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.back); joinCode(b.dataset.back); });
+    app.querySelectorAll('[data-board]').forEach(b => b.onclick = () => openBoard(b.dataset.board));
     const tr = $('#hs-track'), dots = $('#hs-dots');
     if (tr && dots) tr.onscroll = () => { const i = Math.round(tr.scrollLeft / tr.clientWidth); dots.querySelectorAll('i').forEach((d, j) => d.classList.toggle('on', i === j)); };
   };
@@ -1227,26 +1227,45 @@ function bgBoardSVG(board, o) {
 }
 const BG_START = (() => { const pts = Array(26).fill(0); pts[24] = 2; pts[13] = 5; pts[8] = 3; pts[6] = 5; pts[1] = -2; pts[12] = -5; pts[17] = -3; pts[19] = -5; return { pts, bar: [0, 0], off: [0, 0] }; })();
 
-// On the Play page: a section with open boards and a way in.
-function bgSection() {
+// The Backgammon tab: your board, a way in, open boards, and how the stakes work.
+function tabBg() {
   const boards = (S.lobby && S.lobby.boards) || [];
-  return `<section class="sec bg-sec">
-    <div class="sec-head"><div><h2 class="sec-title">Backgammon</h2><p class="sec-sub">Head to head for a stake per point, with the doubling cube</p></div></div>
-    <div class="bg-cta">
-      <div class="bg-cta-board">${bgBoardSVG(BG_START, { seat: 0, small: true, cube: 1, cubeOwner: null, dice: [6, 4], diceSide: 'right' })}</div>
-      <div class="bg-cta-go"><button class="btn primary" id="bg-bot">Play a bot</button><button class="btn" id="bg-new">New board</button></div>
-    </div>
-    ${boards.length ? `<div class="glist bg-list">${boards.map(b => `
-      <button class="grow" data-board="${b.code}"><span class="bg-faces">${b.seats.map(s => (s ? `<span class="pmini">${portrait(s.avatar, s.name)}</span>` : '<span class="pmini open">+</span>')).join('')}</span>
-        <span class="gr-main"><b>${esc(b.name)}</b><span>${bgPer(b.stake)} · buy-in ${money(b.buyIn)}</span></span>
-        <span class="gr-side ${b.seats.every(Boolean) ? 'full' : ''}">${b.seats.every(Boolean) ? 'Watch' : 'Seat open'}</span>${TICON.chev}</button>`).join('')}</div>` : ''}
-  </section>`;
-}
-function bindBgSection() {
-  const b1 = $('#bg-bot'), b2 = $('#bg-new');
-  if (b1) b1.onclick = () => openNewBoard(true);
-  if (b2) b2.onclick = () => openNewBoard(false);
-  app.querySelectorAll('[data-board]').forEach(b => b.onclick = () => openBoard(b.dataset.board));
+  const mine = Object.entries(S.me.atTablesBy || {}).filter(([k]) => k.startsWith('bg:'));
+  const html = `
+    ${largeTitle('Backgammon', '<button class="btn small" id="bg-code">Join with code</button>')}
+    <p class="lead">Head to head for a stake per point, with the doubling cube.</p>
+    ${mine.length ? `<div class="seated">${mine.map(([k, amt]) => `<button class="seated-row" data-board="${esc(k.slice(3))}"><span class="pulse"></span><span>You’re at a board with ${money(amt)}</span><span class="go">Return ›</span></button>`).join('')}</div>` : ''}
+    <section class="bg-hero">
+      <div class="bg-hero-board">${bgBoardSVG(BG_START, { seat: 0, small: true, cube: 1, cubeOwner: null, dice: [6, 4], diceSide: 'right' })}</div>
+      <div class="bg-hero-go"><button class="btn primary" id="bg-bot">Play a bot</button><button class="btn" id="bg-new">New board</button></div>
+    </section>
+    <section class="sec">
+      <div class="sec-head"><div><h2 class="sec-title">Open boards</h2><p class="sec-sub">Sit down against whoever’s waiting</p></div></div>
+      ${!S.lobby ? skelRows(2) : boards.length ? `<div class="glist bg-list">${boards.map(b => `
+        <button class="grow" data-board="${b.code}"><span class="bg-faces">${b.seats.map(x => (x ? `<span class="pmini">${portrait(x.avatar, x.name)}</span>` : '<span class="pmini open">+</span>')).join('')}</span>
+          <span class="gr-main"><b>${esc(b.name)}</b><span>${bgPer(b.stake)} · buy-in ${money(b.buyIn)}</span></span>
+          <span class="gr-side ${b.seats.every(Boolean) ? 'full' : ''}">${b.seats.every(Boolean) ? 'Watch' : 'Seat open'}</span>${TICON.chev}</button>`).join('')}</div>`
+        : '<div class="empty card-empty"><p>No open boards right now.</p><p class="sub">Start one and share the code, or play a bot.</p></div>'}
+    </section>
+    <section class="sec">
+      <div class="sec-head"><h2 class="sec-title">How the stakes work</h2></div>
+      <div class="list bg-rules">
+        <div class="lrowbtn static"><div class="lr-txt"><b>A game is 1 point</b><span>A gammon is 2, a backgammon 3</span></div></div>
+        <div class="lrowbtn static"><div class="lr-txt"><b>The cube doubles it</b><span>Double before you roll; they take or drop</span></div></div>
+        <div class="lrowbtn static"><div class="lr-txt"><b>The loser pays points × stake</b><span>Your buy-in covers ${BG_BUYIN_POINTS} points</span></div></div>
+      </div>
+    </section>`;
+  const bind = () => {
+    $('#bg-bot').onclick = () => openNewBoard(true);
+    $('#bg-new').onclick = () => openNewBoard(false);
+    $('#bg-code').onclick = () => openSheet(`<h2>Join a board</h2><p class="wait">Ask your friend for the board’s 5-letter code.</p>
+      <form class="join-row" id="bgjf"><input id="bgjc" maxlength="8" placeholder="TG626" autocomplete="off" aria-label="Board code" autocapitalize="characters"><button class="btn primary" type="submit">Open</button></form>`, () => {
+      $('#bgjc').focus();
+      $('#bgjf').onsubmit = e => { e.preventDefault(); const code = $('#bgjc').value.trim().toUpperCase(); if (code) { closeModal(); openBoard(code); } };
+    });
+    app.querySelectorAll('[data-board]').forEach(b => b.onclick = () => openBoard(b.dataset.board));
+  };
+  return { html, bind };
 }
 function openNewBoard(vsBot) {
   const st = { vsBot, stake: S.bgStake || 100, level: 'hard', isPrivate: false };
@@ -1267,7 +1286,7 @@ function openNewBoard(vsBot) {
 }
 function openBoard(code) { S.bg = null; S.view = 'bg'; renderBgWait(); send({ t: 'bgOpen', code }); }
 function renderBgWait() { app.innerHTML = `<div class="page bgpage">${pageBar('Backgammon')}<div class="bg-board-wrap skel"></div></div>`; $('#pg-back').onclick = closeBoard; }
-function closeBoard() { send({ t: 'bgClose' }); S.bg = null; S.bgPend = null; goLobby(); }
+function closeBoard() { send({ t: 'bgClose' }); S.bg = null; S.bgPend = null; S.tab = 'bg'; goLobby(); }
 
 // The board screen.
 function renderBg() {
@@ -1348,7 +1367,7 @@ function renderBg() {
   on('#bg-leave', () => {
     const live = g && g.phase !== 'over' && me >= 0;
     openModal(`<h2>Leave the board?</h2><p class="wait">${live ? `Leaving now concedes this game (${money(Math.min(g.cube * R.stake, S0.stack))}). ` : ''}${money(Math.max(0, S0.stack - (live ? g.cube * R.stake : 0)))} goes back to your balance.</p><button class="btn primary" id="bgl-yes">Leave</button><button class="btn" data-close>Stay</button>`, () => {
-      $('#bgl-yes').onclick = () => { closeModal(); send({ t: 'bgLeave', code: R.code }); S.bg = null; S.bgPend = null; renderTabs(); };
+      $('#bgl-yes').onclick = () => { closeModal(); send({ t: 'bgLeave', code: R.code }); S.bg = null; S.bgPend = null; S.tab = 'bg'; renderTabs(); };
     });
   });
   on('#bg-sit', () => send({ t: 'bgSit', code: R.code }));
@@ -1860,7 +1879,7 @@ function renderStage() {
       <div class="sp2 ${side} ${specialOf(s.avatar) ? 'vip sp-' + specialOf(s.avatar) : ''}">
         ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
         <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
-        <div class="sp-plate"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
+        <div class="sp-plate" style="--pc:${DOTC[((s.avatar && s.avatar.c) || 0) % DOTC.length]}"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
         ${under ? `<span class="sp-under ${utone}">${under}</span>` : ''}
         ${fan ? `<div class="sp-fan n${s.cards.length} ${shown ? 'up' : ''} ${isMe ? 'myc' : ''}">${fan}</div>` : ''}
       </div>

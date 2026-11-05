@@ -56,13 +56,17 @@ function createRooms(deps) {
     leave(userId) {
       const i = this.seatOf(userId);
       if (i < 0) return 'You’re not sitting here';
-      if (this.game && this.game.phase !== 'over') { this.game.resign(i); this._settle(); }
+      const conceded = !!(this.game && this.game.phase !== 'over');
+      if (conceded) { this.game.resign(i); this._settle(); }
       const s = this.seats[i];
       this.seats[i] = null;
       deps.credit(s.userId, s.stack, `Backgammon ${this.code}: cash out`);
       deps.setAt(s.userId, this.code, null);
       this._clear();
-      if (this.game && this.game.phase === 'over') this.game = null;
+      if (this.game && this.game.phase === 'over') { this.game = null; this.result = null; }
+      // tell whoever's still here what happened
+      const other = this.seats[1 - i];
+      if (other && other.kind === 'human') deps.notify(other.userId, { t: 'notice', message: `${s.name} left the board${conceded ? ' and conceded the game in progress' : ''}.` });
       this._changed();
       return null;
     }
@@ -78,6 +82,7 @@ function createRooms(deps) {
     _maybeStart() {
       if (this.game || !this.seats[0] || !this.seats[1]) return;
       if (this.seats.some(s => s.stack < this.stake)) return;
+      this.result = null;
       this.game = new Game();
       this.gameNo++;
       this.lastMoves = null;

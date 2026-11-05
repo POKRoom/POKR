@@ -2347,3 +2347,56 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .bg-faces .pmini { width: 32px; height: 32px; border: 2px solid var(--panel); }
 .bg-faces .pmini + .pmini { margin-left: -10px; }
 .bg-list .grow + .grow::before { left: 78px; }
+
+/* =====================================================================
+   NAME PLATES v2 — our own: one rounded tag, a stripe in the player's
+   colour, the name small and quiet, the stack in white after a chip.
+   ===================================================================== */
+.sp2 .sp-plate, .seat.turn .sp2 .sp-plate, .seat.won .sp2 .sp-plate {
+  min-width: 78px; max-width: 108px; padding: 3px 10px 4px 12px; border-radius: 11px;
+  background: rgba(13, 14, 18, .94); border: 1px solid rgba(255, 255, 255, .13);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .55); align-items: flex-start; }
+.sp2 .sp-plate::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--pc, #C9A86A); }
+.sp2 .sp-plate .nm { padding: 0; border: 0; background: none; text-align: left; font: 500 11px/1.3 var(--sans); color: rgba(255, 255, 255, .7); max-width: 100%; }
+.sp2 .sp-plate .ch { display: flex; align-items: center; gap: 4px; padding: 0; text-align: left; font: 700 14px/1.25 var(--sans); color: #fff; }
+.sp2 .sp-plate .ch::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: #E2B33C; box-shadow: inset 0 0 0 1.5px #8A6A1E, inset 0 0 0 3px #F4D77A; }
+.seat.turn .sp2 .sp-plate { border-color: #F3C969; box-shadow: 0 0 0 2px rgba(243, 201, 105, .22), 0 0 16px rgba(243, 201, 105, .3), 0 6px 16px rgba(0, 0, 0, .55); }
+.seat.won .sp2 .sp-plate { border-color: #6FE0A0; }
+.sp2.vip .sp-plate { border-color: #E2B33C !important; }
+.sp2.vip .sp-plate .nm { background: none; color: #FCE7A8; }
+.sp2.sp-gold .sp-plate { background: rgba(32, 25, 10, .95); }
+.sp-timer { height: 2.5px; left: 3px; }
+@media (min-width: 700px) {
+  .sp2 .sp-plate { min-width: 96px; max-width: 130px; }
+  .sp2 .sp-plate .nm { font-size: 12px; } .sp2 .sp-plate .ch { font-size: 15.5px; }
+}
+/* the same tag in the character builder */
+.look-plate { text-align: left; padding: 4px 12px 6px 14px; border-radius: 12px; border-width: 1px; position: relative; }
+.look-plate::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #C9A86A; }
+.look-plate span { padding: 0; border: 0; background: none; font: 500 13px var(--sans); color: rgba(255, 255, 255, .72); }
+.look-plate b { padding: 0; display: flex; align-items: center; gap: 5px; color: #fff; font: 700 17px var(--sans); }
+.look-plate b::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #E2B33C; box-shadow: inset 0 0 0 1.5px #8A6A1E, inset 0 0 0 3px #F4D77A; }
+.look-plate.vip span { background: none; color: #FCE7A8; }
+
+/* Backgammon tab */
+.bg-hero { display: flex; flex-direction: column; gap: 14px; padding: 14px; border-radius: 16px; background: var(--panel); }
+.bg-hero-board { border-radius: 12px; overflow: hidden; box-shadow: 0 10px 26px rgba(0, 0, 0, .5); }
+.bg-hero-go { display: flex; gap: 10px; }
+.bg-hero-go .btn { flex: 1; }
+@media (min-width: 700px) { .bg-hero { flex-direction: row; align-items: center; } .bg-hero-board { flex: 1.3; } .bg-hero-go { flex: 1; flex-direction: column; } }
+.bg-rules .lrowbtn { cursor: default; }
+/* six tabs: tighter labels */
+.tabbar .tab span { font-size: 11px; letter-spacing: -.01em; white-space: nowrap; }
+.tab.t-bg svg .pips { stroke: currentColor; }
+.tab[aria-current=page].t-bg svg .pips { stroke: var(--velvet, #000); }
+@media (max-width: 899px) { .tabbar { grid-template-columns: repeat(6, minmax(0, 1fr)); } .tabbar .tab { padding-left: 0; padding-right: 0; min-width: 0; } }
+/* six tabs: every icon the same size, Apple's 10pt tab labels */
+@media (max-width: 899px) {
+  .tabbar .tab > svg { width: 22px; height: 22px; }
+  .tabbar .tab span:last-child { font-size: 10px; letter-spacing: -.01em; line-height: 1.2; }
+  .tabbar .tab .ava { --size: 22px; width: 22px; height: 22px; }
+}
+@media (max-width: 899px) {
+  .tabbar { grid-template-columns: repeat(6, auto); justify-content: space-between; padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .tabbar .tab { min-width: 44px; }
+}
