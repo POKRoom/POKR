@@ -20,6 +20,7 @@ const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
 // The VIP star rides on the avatar so it shows wherever the player does: seats, chat, leaderboard.
 const stamp = (u, avatar) => ({ ...avatar, vip: u.vip ? 1 : 0 });
 const { createManager } = require('./tourneys');
+const { createRooms } = require('./bgrooms');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -32,6 +33,7 @@ const AVATAR_COUNT = shop.AVATAR_COUNT, COLOR_COUNT = 8;
 const REFILL_BELOW = 10000; // $100
 
 const tables = new Map();
+let bgRef = null; // the backgammon rooms, once they exist (codes are shared with poker tables)
 const clients = new Set();
 
 // ---------- static files ----------
@@ -64,6 +66,7 @@ function sendMe(userId) {
 const notifyUser = (userId, msg) => { for (const c of clients) if (c.userId === userId) send(c, msg); };
 // Show someone's new name and look at every table they're sitting at.
 function restyleSeats(u) {
+  bg.restyle(u.id, u.name, u.avatar);
   for (const t of tables.values()) {
     const i = t.seatOf(u.id);
     if (i >= 0) { t.seats[i].name = u.name; t.seats[i].avatar = u.avatar; broadcastTable(t); }
@@ -71,7 +74,7 @@ function restyleSeats(u) {
 }
 function lobbyPayload() {
   const list = [...tables.values()].filter(t => !t.isPrivate && t.humanCount() > 0).map(t => t.summary());
-  return { t: 'lobby', tables: list, leaderboard: store.leaderboard() };
+  return { t: 'lobby', tables: list, boards: bg.list(), leaderboard: store.leaderboard() };
 }
 let lobbyTimer = null;
 function lobbyChanged() {
@@ -99,7 +102,7 @@ function makeCode() {
   for (;;) {
     let code = '';
     for (let i = 0; i < 5; i++) code += A[crypto.randomInt(A.length)];
-    if (!tables.has(code)) return code;
+    if (!tables.has(code) && !(bgRef && bgRef.rooms.has(code))) return code;
   }
 }
 const cleanText = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, '').trim().slice(0, max);
@@ -185,8 +188,77 @@ function tourneyChanged(tour) {
 setInterval(() => tm.tick(), 1000).unref();
 const isTourneyTable = t => !!(t && t.tourney);
 
+// ---------- backgammon ----------
+// Money at a board is tracked in atTables under "bg:CODE", so a restart refunds it like any table.
+const bg = createRooms({
+  makeCode,
+  broadcast(room) {
+    if (room._bcast) return;
+    room._bcast = true;
+    setImmediate(() => { room._bcast = false; for (const c of clients) if (c.bg === room.code) send(c, { t: 'bgState', s: room.view(c.userId) }); });
+  },
+  charge(userId, cents, why) {
+    const u = store.byId(userId); if (!u) return 'Sign in first';
+    if (u.bankroll < cents) return `You need ${money(cents)} in your balance to sit at this board`;
+    u.bankroll -= cents; store.ledger(u, 'bg-buyin', -cents, why); store.save(); sendMe(userId);
+    return null;
+  },
+  credit(userId, cents, why) {
+    const u = store.byId(userId); if (!u) return;
+    if (cents) { u.bankroll += cents; store.ledger(u, 'bg-cashout', cents, why); }
+    store.save(); sendMe(userId);
+  },
+  setAt(userId, code, cents) {
+    const u = store.byId(userId); if (!u) return;
+    u.atTables = u.atTables || {};
+    if (cents == null) delete u.atTables['bg:' + code]; else u.atTables['bg:' + code] = cents;
+    store.save(); sendMe(userId);
+  },
+  notify: (userId, msg) => notifyUser(userId, msg),
+  changed: () => lobbyChanged(),
+});
+bgRef = bg;
+setInterval(() => bg.sweep(), 60000).unref();
+
 // ---------- messages ----------
 const handlers = {
+  // ---- backgammon ----
+  bgCreate(c, m) {
+    const u = store.byId(c.userId); if (!u) return;
+    const r = bg.create(u.id, { name: u.name, avatar: u.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate });
+    if (r.err) return send(c, { t: 'error', message: r.err });
+    c.bg = r.code;
+    send(c, { t: 'bgState', s: bg.view(r.code, u.id) });
+    lobbyChanged();
+  },
+  bgOpen(c, m) {
+    const code = String(m.code || '').toUpperCase();
+    const s = bg.view(code, c.userId);
+    if (!s) return send(c, { t: 'bgGone', code });
+    c.bg = code;
+    if (s.mySeat >= 0) bg.setConnected(c.userId, true);
+    send(c, { t: 'bgState', s: bg.view(code, c.userId) });
+  },
+  bgClose(c) { c.bg = null; },
+  bgSit(c, m) {
+    const u = store.byId(c.userId); if (!u) return;
+    const err = bg.sit(u.id, { name: u.name, avatar: u.avatar }, String(m.code || c.bg || ''));
+    if (err) send(c, { t: 'error', message: err });
+  },
+  bgLeave(c, m) {
+    const err = bg.leave(c.userId, String(m.code || c.bg || ''));
+    if (err) send(c, { t: 'error', message: err });
+    c.bg = null;
+    send(c, lobbyPayload());
+  },
+  bgBot(c, m) { const err = bg.addBot(c.userId, String(m.code || c.bg || '')); if (err) send(c, { t: 'error', message: err }); },
+  bgAct(c, m) {
+    const a = m.a || {};
+    if (!['roll', 'move', 'double', 'take', 'drop'].includes(a.t)) return;
+    const err = bg.act(c.userId, String(m.code || c.bg || ''), { t: a.t, steps: a.steps });
+    if (err) { send(c, { t: 'error', message: err }); const s = bg.view(c.bg, c.userId); if (s) send(c, { t: 'bgState', s }); }
+  },
+
   tourneys(c) { send(c, { t: 'tourneys', list: tm.list(c.userId) }); },
   tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, c.userId); if (!d) return send(c, { t: 'error', message: 'That tournament doesn’t exist' }); send(c, { t: 'tourney', d }); },
   tUnwatch(c) { c.tview = null; },
@@ -504,6 +576,7 @@ attach(server, ws => {
   });
   ws.on('close', () => {
     clients.delete(c);
+    if (c.bg && c.userId && ![...clients].some(o => o.userId === c.userId && o.bg === c.bg)) bg.setConnected(c.userId, false);
     if (c.code && c.userId) {
       const still = [...clients].some(o => o.userId === c.userId && o.code === c.code);
       const t = tables.get(c.code);

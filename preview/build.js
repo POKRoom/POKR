@@ -46,6 +46,9 @@ ${mod('bots', 'server/bots.js')}
 ${mod('engine', 'server/engine.js')}
 ${mod('shop', 'server/shop.js')}
 ${mod('looks', 'server/looks.js')}
+${mod('backgammon', 'server/backgammon.js')}
+${mod('bgbot', 'server/bgbot.js')}
+${mod('bgrooms', 'server/bgrooms.js')}
 ${mod('tournament', 'server/tournament.js')}
 ${mod('tourneys', 'server/tourneys.js')}
 ${read('preview/sim.js')}

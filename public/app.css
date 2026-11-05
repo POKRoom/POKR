@@ -2271,3 +2271,79 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .look-plate span.vipstar { display: inline; padding: 0; border: 0; background: none; margin-left: 4px; color: #F3C969; }
 .sng-seg { margin: 0 0 10px; display: inline-flex; }
 .sng-seg button { padding: 0 18px; }
+
+/* =====================================================================
+   BACKGAMMON — the board in the room's felt, wood frame, ivory and
+   oxblood points; your checkers ivory, theirs dark.
+   ===================================================================== */
+.bg-svg { width: 100%; height: auto; display: block; user-select: none; -webkit-user-select: none; }
+.bg-frame { fill: #3E2716; stroke: #1E120A; stroke-width: 2; }
+.bg-field { fill: var(--felt, #1F7049); }
+.bg-bar { fill: #2C1B0F; }
+.bg-tray { fill: #24160C; stroke: rgba(255, 255, 255, .06); }
+.bg-tray.tgt { fill: rgba(243, 201, 105, .28); stroke: #F3C969; stroke-width: 2; }
+.bg-pt.a { fill: #E6D9BC; }
+.bg-pt.b { fill: #8A2A2E; }
+.bg-pt.tgt { fill: #F3C969; }
+.bg-ck circle { stroke-width: 1.6; }
+.bg-ck.me circle { fill: #F2EADA; stroke: #B7A784; }
+.bg-ck.me circle.in { fill: none; stroke: rgba(150, 128, 90, .55); }
+.bg-ck.op circle { fill: #2A2524; stroke: #0E0B0A; }
+.bg-ck.op circle.in { fill: none; stroke: rgba(255, 255, 255, .14); }
+.bg-ck.can circle:first-child { stroke: #F3C969; stroke-width: 3.2; }
+.bg-ck.sel circle:first-child { stroke: #F3C969; stroke-width: 4.5; filter: drop-shadow(0 0 6px rgba(243, 201, 105, .9)); }
+.bg-ck.arrived circle:first-child { stroke: #8FC9FF; stroke-width: 3; }
+.bg-ck.pop { animation: bgArrive .45s ease-out; transform-box: fill-box; transform-origin: center; }
+@keyframes bgArrive { from { transform: scale(1.22); } to { transform: scale(1); } }
+.bg-n { font: 700 15px var(--sans); text-anchor: middle; }
+.bg-n.me { fill: #3B2C18; } .bg-n.op { fill: #F2EADA; }
+.bg-slab.me { fill: #F2EADA; } .bg-slab.op { fill: #3A3433; }
+.bg-cube rect { fill: #F7F2E6; stroke: #8E7B55; stroke-width: 1.5; }
+.bg-cube text { font: 800 15px var(--sans); text-anchor: middle; fill: #1E1710; }
+.bg-die rect { fill: #FBF8F1; stroke: #9C8E70; stroke-width: 1.5; }
+.bg-die.op rect { fill: #2A2524; stroke: #0E0B0A; }
+.bg-die circle { fill: #1E1710; }
+.bg-die.op circle { fill: #F2EADA; }
+.bg-die.used { opacity: .3; }
+.bg-hit { fill: transparent; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .bg-ck.pop { animation: none; } }
+
+/* board screen */
+.bgpage { padding-bottom: 32px; }
+.bg-board-wrap { margin: 8px 0; border-radius: 16px; overflow: hidden; box-shadow: 0 14px 34px rgba(0, 0, 0, .55); }
+.bg-board-wrap.skel { aspect-ratio: 1.2; background: var(--panel); }
+.bg-player { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--panel); overflow: hidden; }
+.bg-player.on { box-shadow: inset 0 0 0 1.5px #F3C969; }
+.bg-player .pmini { width: 40px; height: 40px; }
+.bg-player .pmini.open, .bg-faces .pmini.open { display: grid; place-items: center; color: var(--live); font: 600 18px var(--sans); background: var(--panel-hi); }
+.bgp-txt { display: flex; flex-direction: column; min-width: 0; }
+.bgp-txt b { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bgp-txt b i { font-style: normal; font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 4px; }
+.bgp-txt span { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bg-player.empty { opacity: .8; }
+.bg-clock { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: #F3C969; transform-origin: left; animation: bgClock linear forwards; }
+@keyframes bgClock { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.bg-status { min-height: 22px; margin: 12px 4px 8px; font-size: 15px; color: var(--cream); text-align: center; }
+.bg-dock { display: flex; gap: 10px; }
+.bg-dock .btn { flex: 1; }
+.btn.danger { background: #3A1C1E; color: #FF8A84; }
+.bg-result { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px; border-radius: 12px; background: var(--panel); }
+.bg-result b { font-size: 20px; }
+.bg-result span { font-size: 15px; color: var(--muted); }
+.bg-result i { font-style: normal; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.bg-result.won { box-shadow: inset 0 0 0 1.5px rgba(63, 192, 122, .7); }
+.bg-result.won b { color: var(--live); }
+.bg-hist { margin-top: 16px; font-size: 14px; color: var(--muted); }
+.bg-hist summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.bg-hist div { padding: 4px 0; }
+.bg-hist b { color: var(--cream); font-weight: 600; }
+@media (min-width: 700px) { .bgpage { max-width: 680px; margin: 0 auto; } }
+
+/* Play page section */
+.bg-cta { display: grid; grid-template-columns: 1.25fr 1fr; gap: 14px; align-items: center; padding: 14px; border-radius: 16px; background: var(--panel); margin-bottom: 12px; }
+.bg-cta-board { border-radius: 10px; overflow: hidden; box-shadow: 0 8px 20px rgba(0, 0, 0, .45); }
+.bg-cta-go { display: flex; flex-direction: column; gap: 10px; }
+.bg-faces { display: flex; flex: none; }
+.bg-faces .pmini { width: 32px; height: 32px; border: 2px solid var(--panel); }
+.bg-faces .pmini + .pmini { margin-left: -10px; }
+.bg-list .grow + .grow::before { left: 78px; }

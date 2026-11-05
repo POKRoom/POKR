@@ -7,6 +7,7 @@
   const shop = require('./shop');
   const looks = require('./looks');
   const { createManager } = require('./tourneys');
+  const { createRooms } = require('./bgrooms');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
   const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
   const BANTER = {
@@ -60,7 +61,7 @@
     for (const [name, b] of Object.entries(db.bots)) if (b.hands) rows.push({ id: 'bot-' + name, name: name + ' (bot)', avatar: { a: -1, c: b.c }, net: b.net, hands: b.hands, winRate: b.won / b.hands, biggestPot: b.biggest });
     return rows.sort((a, b) => b.net - a.net);
   }
-  const lobby = () => ({ t: 'lobby', tables: [...tables.values()].filter(t => !t.isPrivate).map(t => t.summary()), leaderboard: leaderboard() });
+  const lobby = () => ({ t: 'lobby', tables: [...tables.values()].filter(t => !t.isPrivate).map(t => t.summary()), boards: typeof bg !== 'undefined' ? bg.list() : [], leaderboard: leaderboard() });
   const makeCode = () => { const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 5; i++) c += A[Math.floor(Math.random() * A.length)]; return c; };
 
   function botSay(t, seatIdx, text, delay) {
@@ -156,7 +157,48 @@
   setInterval(() => tm.tick(), 1000);
   const isTourneyTable = t => !!(t && t.tourney);
 
+  // Backgammon boards, run by the same code as the real server.
+  const bg = createRooms({
+    makeCode,
+    broadcast(room) {
+      if (room._bcast) return;
+      room._bcast = true;
+      setTimeout(() => { room._bcast = false; if (client && db.user && client.bg === room.code) out({ t: 'bgState', s: room.view(db.user.id) }); }, 0);
+    },
+    charge(userId, cents) { const u = db.user; if (!u) return 'Sign in first'; if (u.bankroll < cents) return `You need ${money(cents)} in your balance to sit at this board`; u.bankroll -= cents; persist(); sendMe(); return null; },
+    credit(userId, cents) { const u = db.user; if (!u) return; u.bankroll += cents || 0; persist(); sendMe(); },
+    setAt(userId, code, cents) { const u = db.user; if (!u) return; if (cents == null) delete u.atTables['bg:' + code]; else u.atTables['bg:' + code] = cents; persist(); sendMe(); },
+    notify(userId, msg) { out(msg); },
+    changed() {},
+  });
+
   const H = {
+    // ---- backgammon ----
+    bgCreate(c, m) {
+      if (!db.user) return;
+      const r = bg.create(db.user.id, { name: db.user.name, avatar: db.user.avatar }, { stake: Number(m.stake), vsBot: !!m.vsBot, level: m.level, isPrivate: !!m.isPrivate });
+      if (r.err) return out({ t: 'error', message: r.err });
+      c.bg = r.code;
+      out({ t: 'bgState', s: bg.view(r.code, db.user.id) });
+    },
+    bgOpen(c, m) {
+      const code = String(m.code || '').toUpperCase();
+      const s = bg.view(code, db.user.id);
+      if (!s) return out({ t: 'bgGone', code });
+      c.bg = code;
+      if (s.mySeat >= 0) bg.setConnected(db.user.id, true);
+      out({ t: 'bgState', s: bg.view(code, db.user.id) });
+    },
+    bgClose(c) { c.bg = null; },
+    bgSit(c, m) { const err = bg.sit(db.user.id, { name: db.user.name, avatar: db.user.avatar }, String(m.code || c.bg || '')); if (err) out({ t: 'error', message: err }); },
+    bgLeave(c, m) { const err = bg.leave(db.user.id, String(m.code || c.bg || '')); if (err) out({ t: 'error', message: err }); c.bg = null; out(lobby()); },
+    bgBot(c, m) { const err = bg.addBot(db.user.id, String(m.code || c.bg || '')); if (err) out({ t: 'error', message: err }); },
+    bgAct(c, m) {
+      const a = m.a || {};
+      if (!['roll', 'move', 'double', 'take', 'drop'].includes(a.t)) return;
+      const err = bg.act(db.user.id, String(m.code || c.bg || ''), { t: a.t, steps: a.steps });
+      if (err) { out({ t: 'error', message: err }); const s = bg.view(c.bg, db.user.id); if (s) out({ t: 'bgState', s }); }
+    },
     tourneys() { out({ t: 'tourneys', list: tm.list(db.user.id) }); },
     tourney(c, m) { c.tview = String(m.id || ''); const d = tm.detail(c.tview, db.user.id); if (!d) return out({ t: 'error', message: 'That tournament doesn’t exist' }); out({ t: 'tourney', d }); },
     tUnwatch(c) { c.tview = null; },
