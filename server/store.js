@@ -121,6 +121,7 @@ class Store {
 
   bySessionToken(token) { return token ? this.bySession.get(sha(token)) || null : null; }
   byId(id) { return this.users.get(id) || null; }
+  all() { return [...this.users.values()]; }
 
   // One finished hand for this player.
   recordHand(u, { delta, won, pot }) {

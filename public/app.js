@@ -147,40 +147,82 @@ function chipAvatar(av, name) {
 // At the table everyone is a drawn character: a bust with a look picked from their name.
 // Eight looks, five skin tones, eight jacket colours. Original art, drawn in SVG.
 const SKIN = ['#F2CBA8', '#DDAA82', '#B57D57', '#8C5B3D', '#5F3D29'];
-const JACKET = ['#3D5A80', '#8E3B46', '#2F6F5E', '#6B4E9B', '#A86F2C', '#3A3D45', '#7A2E2E', '#2E5E8E'];
+const JACKET = ['#3D5A80', '#8E3B46', '#2F6F5E', '#6B4E9B', '#A86F2C', '#3A3D45', '#7A2E2E', '#2E5E8E', '#C9A04A', '#E9E6E0'];
 const HAIR = ['#1E1712', '#3B2516', '#6B4423', '#A9742F', '#D8C3A0', '#2B2B30', '#7A2F24'];
 const DOTC = ['#E07A5F', '#E9B44C', '#3FB28C', '#5B8DEF', '#A77BDB', '#E26D9A', '#8DBF5A', '#C9A86A'];
+// Must match server/looks.js
+const LOOK_NAMES = ['Short hair', 'Cap', 'Beanie', 'Hood', 'Top hat', 'Headphones', 'Long hair', 'Top knot', 'Cowboy hat', 'Fedora', 'Bandana'];
+const CLUB_LOOKS = [8, 9, 10], CLUB_JACKETS = [8, 9];
+const SPECIALS = [
+  { id: 'crown', name: 'The Crown', blurb: 'A gold crown and a royal robe' },
+  { id: 'shark', name: 'Shark', blurb: 'For the one who eats the table' },
+  { id: 'diamond', name: 'Diamond Hands', blurb: 'Ice shades, white suit, gold chain' },
+  { id: 'flame', name: 'Hot Streak', blurb: 'On fire, literally' },
+  { id: 'astro', name: 'Moonshot', blurb: 'A helmet for the long shot' },
+  { id: 'gold', name: 'Gold Plate', blurb: 'All gold, name plate included' },
+];
 function hashStr(s) { let h = 2166136261; for (const ch of String(s || '?')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
-function portrait(av, name, cls = '') {
+// The character someone has picked, or (for bots and old profiles) one chosen from their name.
+function lookOf(av, name) {
+  if (av && av.ch) return av.ch;
   const h = hashStr(name);
-  const pick = (arr, k) => arr[(h >>> k) % arr.length];
-  const skin = pick(SKIN, 3), hair = pick(HAIR, 7), jk = JACKET[((av && av.c) || 0) % JACKET.length] || pick(JACKET, 11);
-  const look = (h >>> 15) % 8, shades = ((h >>> 19) % 5) === 0, beard = look !== 3 && ((h >>> 22) % 4) === 0;
+  return { lk: (h >>> 15) % 8, sk: (h >>> 3) % SKIN.length, hr: (h >>> 7) % HAIR.length, jk: ((av && av.c) || 0) % 8, sh: ((h >>> 19) % 5) === 0 ? 1 : 0, bd: ((h >>> 22) % 4) === 0 ? 1 : 0, sp: '' };
+}
+const specialOf = av => (av && av.ch && av.ch.sp) || '';
+function portrait(av, name, cls = '') { return drawLook(lookOf(av, name), cls); }
+function drawLook(ch, cls = '') {
+  const seed = ch.jk * 7 + ch.hr * 3 + ch.sk + ch.lk * 11;
+  const pick = (arr, k) => arr[(seed + k) % arr.length];
+  const sp = ch.sp || '';
+  const skin = SKIN[ch.sk] || SKIN[0], hair = HAIR[ch.hr] || HAIR[0];
+  let jk = JACKET[ch.jk] || JACKET[0];
+  if (sp === 'crown') jk = '#5B2A86'; else if (sp === 'diamond' || sp === 'astro') jk = '#EDEFF3'; else if (sp === 'flame') jk = '#B3261E'; else if (sp === 'gold') jk = '#C9A04A'; else if (sp === 'shark') jk = '#5E6B78';
+  const look = ch.lk, shades = ch.sh || sp === 'diamond', beard = ch.bd && look !== 3 && sp !== 'astro';
   const dark = 'rgba(0,0,0,.22)';
-  const body = `<path d="M5 64c1.5-13 11.5-20.5 27-20.5S57.5 51 59 64Z" fill="${jk}"/><path d="M32 43.5c-9 0-16 2.6-20.5 7.6L15 64h17Z" fill="${dark}"/><path d="M24.5 44.5 32 53l7.5-8.5c-2-.7-4.7-1-7.5-1s-5.5.3-7.5 1Z" fill="#ECE8E1"/><path d="M27 44.2 32 53l5-8.8" fill="none" stroke="${dark}" stroke-width="1.2"/>`;
+  let body = `<path d="M5 64c1.5-13 11.5-20.5 27-20.5S57.5 51 59 64Z" fill="${jk}"/><path d="M32 43.5c-9 0-16 2.6-20.5 7.6L15 64h17Z" fill="${dark}"/><path d="M24.5 44.5 32 53l7.5-8.5c-2-.7-4.7-1-7.5-1s-5.5.3-7.5 1Z" fill="#ECE8E1"/><path d="M27 44.2 32 53l5-8.8" fill="none" stroke="${dark}" stroke-width="1.2"/>`;
+  if (sp === 'crown') body += `<path d="M10 54c6-6 14-8.5 22-8.5S48 48 54 54" stroke="#F4F1EA" stroke-width="4" fill="none"/><circle cx="18" cy="51" r="1" fill="#222"/><circle cx="46" cy="51" r="1" fill="#222"/><path d="M8 60c7-7 15-9.5 24-9.5S49 53 56 60" stroke="#E2B33C" stroke-width="1.4" fill="none"/>`;
+  if (sp === 'diamond') body += `<path d="M22 46c2 7 6 10 10 10s8-3 10-10" stroke="#E2B33C" stroke-width="2" fill="none" stroke-dasharray="2 1.2"/><path d="M32 55.5l2.4 3-2.4 3-2.4-3Z" fill="#9FE6FF" stroke="#fff" stroke-width=".6"/>`;
+  if (sp === 'gold') body += `<path d="M24 50h16" stroke="#8A6A1E" stroke-width="1"/><circle cx="32" cy="57" r="2.4" fill="#F4D77A" stroke="#8A6A1E" stroke-width=".8"/>`;
+  if (sp === 'astro') body += `<rect x="25" y="52" width="14" height="8" rx="2" fill="#C8CDD6"/><circle cx="29" cy="56" r="1.4" fill="#E0544B"/><circle cx="34" cy="56" r="1.4" fill="#3FB28C"/>`;
   const neck = `<rect x="27" y="35" width="10" height="11" rx="4" fill="${skin}"/><rect x="27" y="35" width="10" height="5" fill="${dark}"/>`;
   const head = `<ellipse cx="32" cy="27" rx="12.5" ry="13.5" fill="${skin}"/><path d="M38 14.6c4.4 2.2 6.5 6.7 6.5 12.4S42.4 37.2 38 39.4c2.6-3 3.6-7.4 3.6-12.4S40.6 17.6 38 14.6Z" fill="${dark}"/><ellipse cx="19.6" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/><ellipse cx="44.4" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/>`;
+  const lens = sp === 'diamond' ? '#7FDCFF' : '#111';
   const face = shades
-    ? `<rect x="21" y="24.5" width="22" height="6.5" rx="3.2" fill="#111"/><path d="M23 26h5" stroke="#fff" stroke-opacity=".5" stroke-width="1.2" stroke-linecap="round"/>`
+    ? `<rect x="21" y="24.5" width="22" height="6.5" rx="3.2" fill="${lens}"/><path d="M23 26h5" stroke="#fff" stroke-opacity=".6" stroke-width="1.2" stroke-linecap="round"/>`
     : `<path d="M24.5 23.4q3-1.6 5.5 0M34 23.4q2.6-1.6 5.5 0" stroke="${hair}" stroke-width="1.6" fill="none" stroke-linecap="round"/><ellipse cx="27.4" cy="27.6" rx="1.6" ry="2" fill="#1B1512"/><ellipse cx="36.6" cy="27.6" rx="1.6" ry="2" fill="#1B1512"/><circle cx="27.9" cy="27" r=".5" fill="#fff"/><circle cx="37.1" cy="27" r=".5" fill="#fff"/>`;
   const mouth = `<path d="M28.6 33.6q3.4 2.2 6.8 0" stroke="#6E3B2A" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
   const beardP = beard ? `<path d="M19.8 29c.8 9.4 6 13.3 12.2 13.3S43.4 38.4 44.2 29c-2.6 4.2-6.4 5.6-12.2 5.6S22.4 33.2 19.8 29Z" fill="${hair}"/><path d="M28.6 34q3.4 1.8 6.8 0" stroke="#000" stroke-opacity=".35" stroke-width="1.3" fill="none" stroke-linecap="round"/>` : '';
   const shortHair = `<path d="M19.4 27c-.6-10 5.4-15.4 12.6-15.4S45.2 17 44.6 27c-1.8-5.4-5.6-8.6-12.6-8.6S21.2 21.6 19.4 27Z" fill="${hair}"/>`;
-  let back = '', top = '', faceOverride = '';
+  let back = '', top = '', faceOverride = '', front = '';
   if (look === 0) top = shortHair;
-  else if (look === 1) { const c = pick(JACKET, 5); top = `<path d="M19 24.5c0-8.4 6-13 13-13s13 4.6 13 13Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${dark}"/><circle cx="32" cy="11.6" r="1.5" fill="${dark}"/>`; }
+  else if (look === 1) { const c = pick(JACKET.slice(0, 8), 5); top = `<path d="M19 24.5c0-8.4 6-13 13-13s13 4.6 13 13Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${c}"/><path d="M29 23h21.5c0 2.3-2.2 3.6-5.4 3.6H29Z" fill="${dark}"/><circle cx="32" cy="11.6" r="1.5" fill="${dark}"/>`; }
   else if (look === 2) { const c = pick(DOTC, 5); top = `<path d="M18.6 25.5c0-9.2 6-14.6 13.4-14.6s13.4 5.4 13.4 14.6Z" fill="${c}"/><path d="M22 15v9M26 12.6v11.4M30 11.4V24M34 11.4V24M38 12.6v11.4M42 15v9" stroke="${dark}" stroke-width="1"/><rect x="17.6" y="21.6" width="28.8" height="5.4" rx="2.7" fill="${c}"/><rect x="17.6" y="21.6" width="28.8" height="5.4" rx="2.7" fill="${dark}"/><circle cx="32" cy="9.6" r="3.2" fill="${c}"/>`; }
   else if (look === 3) {
-    // the hood: a dark face and two bright eyes
     back = `<path d="M13 42c-3-19 5.6-32 19-32s22 13 19 32c-4.4 3.6-11 5.4-19 5.4S17.4 45.6 13 42Z" fill="${jk}"/><path d="M13 42c-3-19 5.6-32 19-32 -9 3-14 15-12.6 33Z" fill="${dark}"/>`;
     faceOverride = `<ellipse cx="32" cy="29" rx="10.4" ry="11.6" fill="#0E0E12"/><path d="M24.6 27.4l5.4 1.6-5 1.2Z M39.4 27.4l-5.4 1.6 5 1.2Z" fill="${pick(['#FFFFFF', '#7FE3FF', '#FFD36B', '#FF7A7A'], 9)}"/>`;
   }
   else if (look === 4) top = `${shortHair}<rect x="21.5" y="1.5" width="21" height="15" rx="2" fill="#16161A"/><rect x="21.5" y="11" width="21" height="2.8" fill="${pick(DOTC, 9)}"/><rect x="16" y="14.6" width="32" height="3.6" rx="1.8" fill="#16161A"/>`;
   else if (look === 5) { const c = pick(DOTC, 9); top = `${shortHair}<path d="M17.4 28a14.6 14.6 0 0 1 29.2 0" stroke="#1E1E22" stroke-width="2.8" fill="none"/><rect x="14.4" y="24" width="6.6" height="11" rx="3.3" fill="${c}"/><rect x="43" y="24" width="6.6" height="11" rx="3.3" fill="${c}"/>`; }
   else if (look === 6) { back = `<path d="M18.2 31c-1.2-13.4 5-20 13.8-20s15 6.6 13.8 20l1.4 13H16.8Z" fill="${hair}"/>`; top = `<path d="M19.4 26c0-9.6 5.6-14.6 12.6-14.6S44.6 16.4 44.6 26c-3-5.6-8-7.4-13.6-6.8-4.6.5-8.6 2.8-11.6 6.8Z" fill="${hair}"/>`; }
-  else top = `${shortHair}<circle cx="32" cy="10.2" r="5.2" fill="${hair}"/>`;
+  else if (look === 7) top = `${shortHair}<circle cx="32" cy="10.2" r="5.2" fill="${hair}"/>`;
+  else if (look === 8) top = `${shortHair}<path d="M6 21.5c4 3 14 4.4 26 4.4s22-1.4 26-4.4c-2 4.4-12 7-26 7S8 25.9 6 21.5Z" fill="#7A4E2A"/><path d="M19 22c-.4-6 1.6-12.6 6.4-12.6 2.4 0 4 2 6.6 2s4.2-2 6.6-2c4.8 0 6.8 6.6 6.4 12.6-3.6 1.4-8.4 2-13 2s-9.4-.6-13-2Z" fill="#8E5E34"/><path d="M19.6 19.6c3.6 1.2 8 1.8 12.4 1.8s8.8-.6 12.4-1.8" stroke="#3B2414" stroke-width="2"/>`;
+  else if (look === 9) top = `${shortHair}<path d="M10.5 21.4c4 2.4 12 3.4 21.5 3.4s17.5-1 21.5-3.4c-1.4 3.2-10 5.4-21.5 5.4s-20.1-2.2-21.5-5.4Z" fill="#2A2A30"/><path d="M18.5 22c0-7.4 3.6-12 13.5-12s13.5 4.6 13.5 12c-3.6 1.2-8.4 1.8-13.5 1.8s-9.9-.6-13.5-1.8Z" fill="#33333A"/><path d="M27 11q5 3 10 0" stroke="#1C1C20" stroke-width="1.4" fill="none"/><path d="M18.8 19.4c3.6 1.2 8.2 1.8 13.2 1.8s9.6-.6 13.2-1.8" stroke="${pick(DOTC, 3)}" stroke-width="2.2"/>`;
+  else if (look === 10) { const c = pick(['#B3261E', '#2E5E8E', '#1E1E22', '#2F6F5E'], 4); top = `<path d="M19 24c0-8.6 6-13.4 13-13.4S45 15.4 45 24c-3.6-1.6-8-2.4-13-2.4S22.6 22.4 19 24Z" fill="${c}"/><path d="M22 15.5h.01M28 13h.01M35 13h.01M41 15.5h.01M25 19h.01M32 17h.01M39 19h.01" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".7"/><path d="M44 21c3 0 6 1 7 3-2 .4-4 0-6-1.4Z" fill="${c}"/>`; }
+  // specials draw over the look
+  if (sp === 'crown') top = `${shortHair}<path d="M20 18 22 6l5.5 6.4L32 3.5l4.5 8.9L42 6l2 12Z" fill="#E2B33C" stroke="#8A6A1E" stroke-width=".8"/><rect x="20" y="16" width="24" height="4" rx="1.2" fill="#C9962A"/><circle cx="32" cy="9.5" r="1.6" fill="#D23A2F"/><circle cx="25.4" cy="13" r="1.1" fill="#3FB28C"/><circle cx="38.6" cy="13" r="1.1" fill="#5B8DEF"/>`;
+  if (sp === 'shark') {
+    back = `<path d="M11 44c-4-21 6-34 21-34s25 13 21 34c-5 3-12 4.4-21 4.4S16 47 11 44Z" fill="#6E7B88"/><path d="M28 11.4 35 1l3.4 12Z" fill="#5E6B78"/><path d="M11 44c-4-21 6-34 21-34 -10 3-16 16-14 36Z" fill="${dark}"/>`;
+    front = `<path d="M19.6 20.4c4-3.4 8-4.6 12.4-4.6s8.4 1.2 12.4 4.6" stroke="#6E7B88" stroke-width="4" fill="none"/><path d="M20.6 19.6l2.2 3.2 2.2-3.8 2.2 3.4 2.4-3.8 2.4 3.6 2.4-3.6 2.4 3.8 2.2-3.4 2.2 3.8 2.2-3.2" fill="#fff" stroke="#fff" stroke-width=".6" stroke-linejoin="round"/>`;
+  }
+  if (sp === 'flame') top = `<path d="M18.6 26c-2-9 1-13 3.4-15.6.2 3 1.4 4.8 3 5.6-.4-5 1.6-9.6 5.4-12 0 3.6 1.4 6 3.6 7 0-3 1.2-5.6 3.4-7 .6 3.4 2.4 5 4 6.4 1.6-1.6 2.4-3.6 2.4-5.8 2.6 3.6 4.4 9.6 2.6 15.4-2.6-4-7-6-12.4-6s-9.8 2-15.4 6Z" fill="#F08A24"/><path d="M23 22c.4-4 2-6.6 4-8 .2 2.2 1 3.6 2.4 4.2.2-3 1.6-5.6 3.6-7 .2 2.6 1.4 4.6 3.4 5.6.8-1.4 1.2-2.8 1.2-4.4 2.2 2.4 3.4 6 2.4 9.6-2.8-1.6-6-2.4-9-2.4s-5.2.6-8 2.4Z" fill="#FFD34A"/>`;
+  if (sp === 'astro') {
+    back = `<circle cx="32" cy="28" r="20" fill="#E9ECF1"/><circle cx="32" cy="28" r="20" fill="none" stroke="#B8BEC8" stroke-width="1.6"/>`;
+    front = `<path d="M17.4 27.6a14.6 14.8 0 0 1 29.2 0c0 3-1 5-2.4 6.4H19.8c-1.4-1.4-2.4-3.4-2.4-6.4Z" fill="#7FB2FF" opacity=".22"/><path d="M21 21c2-3 5-4.6 8.4-5" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><rect x="45" y="22" width="4" height="9" rx="2" fill="#C8CDD6"/>`;
+  }
+  if (sp === 'shark' || sp === 'astro') faceOverride = '';
   const faceBits = faceOverride || `${face}${mouth}${beardP}`;
-  return `<svg class="por ${cls}" viewBox="9 3 46 61" aria-hidden="true">${back}${body}${neck}${head}${faceBits}${top}</svg>`;
+  const hairTop = sp === 'astro' ? shortHair : sp === 'shark' ? '' : top;
+  return `<svg class="por ${cls}" viewBox="9 3 46 61" aria-hidden="true">${back}${body}${neck}${head}${faceBits}${hairTop}${front}</svg>`;
 }
 // A short stack of chips for a bet: more chips and a richer colour for bigger bets.
 function chipStack(amount, bb) {
@@ -195,6 +237,7 @@ function chipStack(amount, bb) {
   return `<svg class="cstack" viewBox="0 0 22 21" aria-hidden="true">${g}</svg>`;
 }
 function avatarHTML(av, name) {
+  if (name) return `<span class="ava pava ${specialOf(av) ? 'vip' : ''}" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true">${portrait(av, name)}</span>`;
   if (name) return `<span class="ava mono" style="--tone:${TONES[(av && av.c) || 0]}" aria-hidden="true">${esc(initials(name))}</span>`;
   const glyph = av && av.a >= 0 ? AVATARS[av.a] : '🤖';
   return `<span class="ava" style="--ac:${COLORS[(av && av.c) || 0]}" aria-hidden="true">${glyph}</span>`;
@@ -263,6 +306,7 @@ function onMessage(m) {
     case 'authError': showAuthError(m.message); break;
     case 'catalog': S.catalog = m.catalog; break;
     case 'notice': toast(m.message); break;
+    case 'adminUsers': S.adminList = m.list; if (S.view === 'admin') { const q = $('#ad-q'), at = q && q.selectionStart; renderAdmin(); const q2 = $('#ad-q'); if (q && q2 && document.activeElement !== q2 && S.adminQ) { q2.focus(); q2.setSelectionRange(at, at); } } break;
     case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'tourneys') renderTabs(); break;
     case 'tourney': if (!S.tourView || m.d.id === S.tourView) { S.tour = m.d; if (S.view === 'tourney') renderTourney(m.d.id, true); } break;
     case 'tourneyHosted': renderTourney(m.id); break;
@@ -356,7 +400,7 @@ function bindAvatarGrid() {
 }
 // Accounts (email + password) are off for now: players just pick a name. Flip this to true
 // when accounts come back; they're required before any real money.
-const ACCOUNTS = false;
+const ACCOUNTS = true;
 function renderGuest() {
   S.view = 'auth';
   const fan = [12, 24, 36, 48].map((c, i) => cardHTML(c).replace('class="pc', `style="left:${22 + i * 44}px;top:${[4, 1, 1, 4][i] + 6}px;transform:rotate(${[-16, -5, 6, 17][i]}deg)" class="pc`)).join('');
@@ -371,17 +415,18 @@ function renderGuest() {
       <p class="formerr" id="au-err" role="alert" hidden></p>
       <button class="btn primary" type="submit" id="au-go">Let’s play</button>
     </form>
-    <p class="fine">You start with $1,000 in play money. No real money.</p>
+    <p class="fine">Guests start with $1,000 in play money. Make an account to keep it on every device.</p>
+    ${ACCOUNTS ? '<button type="button" class="textbtn guestlink" id="au-acct">Have an account? Log in</button>' : ''}
   </main>`;
   enter();
   $('#auth').onsubmit = e => {
     e.preventDefault();
     const name = $('#au-name').value.trim();
     if (name.length < 2) { const el = $('#au-err'); el.textContent = 'Pick a name with at least 2 characters'; el.hidden = false; return; }
-    const a = Math.floor(Math.random() * 16);
-    send({ t: 'guest', name, avatar: { a, c: a % 8 } });
+    send({ t: 'guest', name, avatar: {} });
     $('#au-go').disabled = true;
   };
+  const ac = $('#au-acct'); if (ac) ac.onclick = () => renderAuth('login');
   $('#au-name').focus();
 }
 function renderAuth(mode) {
@@ -405,15 +450,15 @@ function renderAuth(mode) {
         <input id="au-email" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"></div>
       <div class="field"><label class="lbl" for="au-pass">Password</label>
         <input id="au-pass" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="${signup ? 'At least 8 characters' : 'Your password'}"></div>
-      ${signup ? `<div class="field"><span class="lbl">Avatar</span>${avatarGrid()}</div>` : ''}
       <p class="formerr" id="au-err" role="alert" hidden></p>
       <button class="btn primary" type="submit" id="au-go">${signup ? 'Create account' : 'Log in'}</button>
     </form>
-    <p class="fine">${signup ? 'You start with $1,000 in play money. ' : ''}Play money only for now, no real money.</p>
+    <p class="fine">${signup ? 'Your account keeps your balance, stats and character on any device. You get a character to start; change it any time.' : 'Play money only for now, no real money.'}</p>
+    <button type="button" class="textbtn guestlink" id="au-guest">Just looking? Play as a guest</button>
   </main>`;
   enter();
   app.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
-  if (signup) bindAvatarGrid();
+  $('#au-guest').onclick = () => renderGuest();
   $('#auth').onsubmit = e => {
     e.preventDefault();
     const email = $('#au-email').value.trim(), password = $('#au-pass').value;
@@ -423,7 +468,7 @@ function renderAuth(mode) {
       if (name.length < 2) return err('Pick a name with at least 2 characters');
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return err('Enter a valid email address');
       if (password.length < 8) return err('Use a password with at least 8 characters');
-      send({ t: 'signup', name, email, password, avatar: { a: S.draft, c: S.draft % 8 } });
+      send({ t: 'signup', name, email, password, avatar: {} });
     } else {
       if (!email || !password) return err('Enter your email and password');
       send({ t: 'login', email, password });
@@ -439,34 +484,114 @@ function showAuthError(message) {
   const go = $('#au-go'); if (go) go.disabled = false;
 }
 
-function renderProfileEdit() {
-  S.view = 'profile-edit';
-  S.draft = S.me.avatar.a;
-  app.innerHTML = `
-  <main class="welcome">
-    <h1 class="logo md" aria-label="Pokr">${LOGO}</h1>
-    <form class="panel pf" id="pf">
-      <h2>Your profile</h2>
-      <div class="field"><label class="lbl" for="pf-name">Name at the table</label>
-        <input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>
-      <div class="field"><span class="lbl">Avatar</span>${avatarGrid(true)}<button type="button" class="textbtn" id="pf-more">More avatars in Pro Pass ›</button></div>
-      ${S.me.guest ? '' : `<div class="field"><span class="lbl">Account</span><span>${esc(S.me.email || '')}</span></div>`}
-      <button class="btn primary" type="submit">Save</button>
-      <div class="acts"><button class="btn" type="button" id="pf-cancel">Back</button>${S.me.guest ? '' : '<button class="btn ghost" type="button" id="pf-logout">Log out</button>'}</div>
-    </form>
-  </main>`;
-  enter();
-  bindAvatarGrid();
-  $('#pf-cancel').onclick = () => goLobby();
-  $('#pf-more').onclick = () => renderClub();
-  if ($('#pf-logout')) $('#pf-logout').onclick = () => { store.set('pokr.token', ''); S.token = null; send({ t: 'logout' }); };
-  $('#pf').onsubmit = e => {
-    e.preventDefault();
-    const name = $('#pf-name').value.trim();
-    if (name.length < 2) { toast('Pick a name with at least 2 characters'); return; }
-    send({ t: 'profile', name, avatar: { a: S.draft, c: S.draft % 8 } });
-    goLobby();
+// The character builder. For yourself: name and look, with Pro Pass parts locked unless you have it.
+// For an admin dressing someone else: every part is open, and specials can be given or taken back.
+function renderProfileEdit() { renderLookEditor({ self: true }); }
+function renderLookEditor(opt) {
+  const self = !!opt.self, target = opt.target || null;
+  S.view = self ? 'profile-edit' : 'admin-player';
+  const club = self ? !!(S.me.club && S.me.club.active) : true;
+  const have = self ? (S.me.specials || []) : (target.specials || []);
+  const D = S.lookDraft = { ...(self ? lookOf(S.me.avatar, S.me.name) : lookOf(target.avatar, target.name)) };
+  const name = self ? S.me.name : target.name;
+  const lockedLook = i => !club && CLUB_LOOKS.includes(i), lockedJk = i => !club && CLUB_JACKETS.includes(i);
+  const swatch = (key, i, color, locked, label) => `<button type="button" class="swatch ${locked ? 'locked' : ''}" data-k="${key}" data-v="${i}" aria-pressed="${D[key] === i}" aria-label="${label}${locked ? ', Pro Pass' : ''}" style="--sw:${color}">${locked ? '<i aria-hidden="true">PRO</i>' : ''}</button>`;
+  const lookBtn = i => `<button type="button" class="lookopt ${lockedLook(i) ? 'locked' : ''}" data-k="lk" data-v="${i}" aria-pressed="${D.lk === i}" aria-label="${LOOK_NAMES[i]}${lockedLook(i) ? ', Pro Pass' : ''}">${drawLook({ ...D, lk: i, sp: '' })}<span>${LOOK_NAMES[i]}</span>${lockedLook(i) ? '<i>PRO</i>' : ''}</button>`;
+  const specialBtn = x => {
+    const own = have.includes(x.id);
+    if (self && !own) return '';
+    return `<div class="specopt ${D.sp === x.id ? 'on' : ''}">
+      <button type="button" class="lookopt sp" data-k="sp" data-v="${x.id}" aria-pressed="${D.sp === x.id}">${drawLook({ ...D, sp: x.id })}<span>${x.name}</span></button>
+      ${self ? '' : `<button type="button" class="textbtn give" data-give="${x.id}" data-on="${own ? 0 : 1}">${own ? 'Take back' : 'Give'}</button>`}
+    </div>`;
   };
+  const specials = SPECIALS.map(specialBtn).join('');
+  app.innerHTML = `<div class="page lookpage">
+    ${pageBar(self ? 'Your character' : esc(target.name))}
+    <section class="look-hero"><div class="look-stage" id="lk-prev">${drawLook(D)}</div>
+      <div class="look-plate ${D.sp ? 'vip' : ''}" id="lk-plate"><span>${esc(name)}</span><b>${self ? money(S.me.bankroll) : `${count(target.hands || 0)} hands`}</b></div>
+      <button type="button" class="btn small" id="lk-shuffle">Shuffle</button></section>
+    ${self ? `<div class="field"><label class="lbl" for="pf-name">Name at the table</label><input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>` : `<p class="lead">${target.bot ? 'A bot at your tables.' : target.email ? esc(target.email) : 'Guest player'} You can change any part of their look, and give them a special.</p>`}
+    ${specials ? `<section class="sec first"><div class="sec-head"><div><h2 class="sec-title">Specials</h2><p class="sec-sub">${self ? 'Given to you. Nobody can buy these.' : 'One of a kind. Give one and it’s theirs to wear.'}</p></div></div>
+      <div class="lookgrid">${specials}${self ? '' : ''}</div>${D.sp ? `<button type="button" class="textbtn" id="lk-nosp">Wear no special</button>` : ''}</section>` : ''}
+    <section class="sec first"><div class="sec-head"><h2 class="sec-title">Style</h2></div><div class="lookgrid">${LOOK_NAMES.map((_, i) => lookBtn(i)).join('')}</div></section>
+    <section class="sec first"><div class="sec-head"><h2 class="sec-title">Skin</h2></div><div class="swatches">${SKIN.map((c, i) => swatch('sk', i, c, false, 'Skin tone ' + (i + 1))).join('')}</div></section>
+    <section class="sec first"><div class="sec-head"><h2 class="sec-title">Hair</h2></div><div class="swatches">${HAIR.map((c, i) => swatch('hr', i, c, false, 'Hair colour ' + (i + 1))).join('')}</div></section>
+    <section class="sec first"><div class="sec-head"><h2 class="sec-title">Jacket</h2></div><div class="swatches">${JACKET.map((c, i) => swatch('jk', i, c, lockedJk(i), 'Jacket ' + (i + 1))).join('')}</div></section>
+    <div class="list togs">
+      <label class="lrowbtn static switch"><div class="lr-txt"><b>Sunglasses</b></div><input type="checkbox" id="lk-sh" ${D.sh ? 'checked' : ''}></label>
+      <label class="lrowbtn static switch"><div class="lr-txt"><b>Beard</b></div><input type="checkbox" id="lk-bd" ${D.bd ? 'checked' : ''}></label>
+    </div>
+    ${self && !club ? `<button class="club-banner" id="lk-club"><span><span class="lbl">Pro Pass · ${money(499)}/mo</span><b>Cowboy hat, fedora, bandana, gold and white jackets</b></span>${TICON.chev}</button>` : ''}
+    <div class="look-save"><button class="btn primary" id="lk-save">${self ? 'Save' : `Save ${esc(target.name)}’s look`}</button></div>
+  </div>`;
+  enter();
+  const redraw = () => {
+    $('#lk-prev').innerHTML = drawLook(D);
+    $('#lk-plate').classList.toggle('vip', !!D.sp);
+    app.querySelectorAll('[data-k]').forEach(b => {
+      const k = b.dataset.k, v = k === 'sp' ? b.dataset.v : +b.dataset.v;
+      b.setAttribute('aria-pressed', String(D[k] === v));
+      if (k === 'lk') b.querySelector('svg').outerHTML = drawLook({ ...D, lk: v, sp: '' });
+      if (k === 'sp') { b.querySelector('svg').outerHTML = drawLook({ ...D, sp: v }); b.parentElement.classList.toggle('on', D.sp === v); }
+    });
+  };
+  app.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    if (b.classList.contains('locked')) { toast('That one comes with Pro Pass', ['See Pro Pass', () => renderClub()]); return; }
+    const k = b.dataset.k; D[k] = k === 'sp' ? (D.sp === b.dataset.v ? '' : b.dataset.v) : +b.dataset.v;
+    buzz(4); redraw();
+  });
+  $('#lk-sh').onchange = e => { D.sh = e.target.checked ? 1 : 0; redraw(); };
+  $('#lk-bd').onchange = e => { D.bd = e.target.checked ? 1 : 0; redraw(); };
+  const nosp = $('#lk-nosp'); if (nosp) nosp.onclick = () => { D.sp = ''; redraw(); nosp.remove(); };
+  $('#lk-shuffle').onclick = () => {
+    const r = n => Math.floor(Math.random() * n);
+    const free = n => { let v; do v = r(n); while (!club && (n === LOOK_NAMES.length ? CLUB_LOOKS : CLUB_JACKETS).includes(v)); return v; };
+    Object.assign(D, { lk: free(LOOK_NAMES.length), sk: r(SKIN.length), hr: r(HAIR.length), jk: free(JACKET.length), sh: r(5) === 0 ? 1 : 0, bd: r(4) === 0 ? 1 : 0 });
+    $('#lk-sh').checked = !!D.sh; $('#lk-bd').checked = !!D.bd; redraw();
+  };
+  const cl = $('#lk-club'); if (cl) cl.onclick = () => renderClub();
+  app.querySelectorAll('[data-give]').forEach(b => b.onclick = () => {
+    const on = b.dataset.on === '1';
+    send({ t: 'adminGrant', userId: target.id, sp: b.dataset.give, on, q: S.adminQ || '' });
+    target.specials = on ? [...new Set([...(target.specials || []), b.dataset.give])] : (target.specials || []).filter(x => x !== b.dataset.give);
+    if (!on && D.sp === b.dataset.give) D.sp = '';
+    toast(on ? `Gave ${target.name} ${SPECIALS.find(x => x.id === b.dataset.give).name}` : 'Taken back');
+    renderLookEditor({ target: { ...target, avatar: { a: 0, c: D.jk % 8, ch: { ...D } } } });
+  });
+  $('#pg-back').onclick = () => (self ? goLobby() : renderAdmin());
+  $('#lk-save').onclick = () => {
+    if (self) {
+      const nm = $('#pf-name').value.trim();
+      if (nm.length < 2) { toast('Pick a name with at least 2 characters'); return; }
+      send({ t: 'profile', name: nm, avatar: { a: 0, c: D.jk % 8, ch: { ...D } } });
+      toast('Saved'); goLobby();
+    } else {
+      send({ t: 'adminLook', userId: target.id, ch: { ...D }, q: S.adminQ || '' });
+      renderAdmin();
+    }
+  };
+}
+
+// Admin: everyone who plays, searchable. Tap someone to change their look or give them a special.
+function renderAdmin() {
+  S.view = 'admin';
+  const list = S.adminList;
+  app.innerHTML = `<div class="page">
+    ${pageBar('Players')}
+    <input id="ad-q" type="search" placeholder="Search by name or email" aria-label="Search players" value="${esc(S.adminQ || '')}">
+    <p class="fine left">Only admins see this. Changes show up at the table right away.</p>
+    ${!list ? skelRows(4) : list.length ? `<div class="glist">${list.map(u => `
+      <button class="grow prow" data-uid="${esc(u.id)}"><span class="pmini ${specialOf(u.avatar) ? 'vip' : ''}">${portrait(u.avatar, u.name)}</span>
+        <span class="gr-main"><b>${esc(u.name)}</b><span>${u.bot ? 'Bot' : u.email ? esc(u.email) : 'Guest'} · ${count(u.hands)} hands</span></span>
+        ${u.specials && u.specials.length ? `<span class="gr-side spc">${u.specials.length} special${u.specials.length > 1 ? 's' : ''}</span>` : ''}${TICON.chev}</button>`).join('')}</div>`
+      : '<div class="empty card-empty"><p>No one matches that.</p></div>'}
+  </div>`;
+  $('#pg-back').onclick = goLobby;
+  let tm;
+  $('#ad-q').oninput = e => { clearTimeout(tm); tm = setTimeout(() => { S.adminQ = e.target.value; send({ t: 'adminUsers', q: S.adminQ }); }, 250); };
+  app.querySelectorAll('[data-uid]').forEach(b => b.onclick = () => renderLookEditor({ target: S.adminList.find(u => u.id === b.dataset.uid) }));
+  if (!list) send({ t: 'adminUsers', q: S.adminQ || '' });
 }
 
 /* ---------------- lobby ---------------- */
@@ -946,13 +1071,15 @@ function tabMe() {
     <div class="list">
       <button class="lrowbtn" id="p-wallet"><div class="lr-txt"><b>Wallet</b><span>${money(me.bankroll)} · deposit or withdraw</span></div>${TICON.chev}</button>
       <button class="lrowbtn" id="p-club"><div class="lr-txt"><b>Pro Pass & themes</b><span>${me.club && me.club.active ? 'Member · ' : ''}${esc(theme)}</span></div>${TICON.chev}</button>
-      <button class="lrowbtn" id="p-edit2"><div class="lr-txt"><b>Name & avatar</b><span>How you show up at the table</span></div>${TICON.chev}</button>
+      <button class="lrowbtn" id="p-edit2"><span class="pmini">${portrait(me.avatar, me.name)}</span><div class="lr-txt"><b>Your character</b><span>${me.specials && me.specials.length ? `${me.specials.length} special${me.specials.length > 1 ? 's' : ''} to wear · ` : ''}How you look at the table</span></div>${TICON.chev}</button>
+      ${me.admin ? `<button class="lrowbtn" id="p-admin"><div class="lr-txt"><b>Players</b><span>Admin: change looks, give out specials</span></div>${TICON.chev}</button>` : ''}
     </div>
     <p class="fine left">Budgets, cool-offs and identity checks arrive before real money does.</p>
     <div class="list"><button class="lrowbtn danger" id="p-logout"><div class="lr-txt"><b>Log out</b></div></button></div>`;
   const bind = () => {
     $('#p-edit').onclick = renderProfileEdit;
     $('#p-edit2').onclick = renderProfileEdit;
+    const ad = $('#p-admin'); if (ad) ad.onclick = () => { S.adminList = null; renderAdmin(); };
     $('#p-club').onclick = () => renderClub();
     $('#p-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
     $('#period').onchange = e => { S.period = e.target.value; store.set('pokr.period', S.period); renderTabs(); };
@@ -992,7 +1119,7 @@ function renderClub() {
     <section class="panel club-hero">
       <span class="lbl">${member ? 'You’re a member' : 'Membership'}</span>
       <div class="price"><span class="num">${money(C.club.priceCents)}</span><span>/ month</span></div>
-      <ul class="perks"><li>Six table rooms, each with its own felt and walls</li><li>Three app themes</li><li>Six members-only avatars</li><li>New looks added as we make them</li></ul>
+      <ul class="perks"><li>Six table rooms, each with its own felt and walls</li><li>Three app themes</li><li>Cowboy hat, fedora and bandana, plus gold and white jackets</li><li>New looks added as we make them</li></ul>
       ${member
         ? `<p class="wait">Renews ${new Date(me.club.renewsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.</p><button class="textbtn" id="club-cancel">Cancel membership</button>`
         : `<button class="btn primary" id="club-join">Get Pro Pass</button>`}
@@ -1015,24 +1142,22 @@ function renderClub() {
       }).join('')}</div>
     </section>
     <section class="panel">
-      <h2>Members-only avatars</h2>
-      <div class="ava-shop">${C.clubAvatars.map(i => `<div class="aitem ${member ? '' : 'locked'}">${ava(i)}<span>${member ? 'Included' : 'Pro Pass'}</span></div>`).join('')}</div>
-      <h2 style="margin-top:6px">Avatar shop</h2>
-      <div class="ava-shop">${C.shopAvatars.map(i => {
-        const owned = (me.ownedAvatars || []).includes(i);
-        return `<div class="aitem">${ava(i)}${owned ? '<span>Owned</span>' : `<button class="btn small" data-buy="${i}">${money(C.avatarPrice)}</button>`}</div>`;
-      }).join('')}</div>
-      <p class="test">Test mode: purchases unlock instantly and aren’t charged. They never come out of your poker balance.</p>
+      <h2>Pro Pass looks</h2>
+      <p class="wait">Extra parts for your character. Specials can’t be bought; they’re given out.</p>
+      <div class="lookgrid club">${[8, 9, 10].map(i => `<div class="lookopt static">${drawLook({ ...lookOf(me.avatar, me.name), lk: i, sp: '' })}<span>${LOOK_NAMES[i]}</span></div>`).join('')}
+        ${[8, 9].map(i => `<div class="lookopt static">${drawLook({ ...lookOf(me.avatar, me.name), jk: i, sp: '' })}<span>${i === 8 ? 'Gold jacket' : 'White jacket'}</span></div>`).join('')}</div>
+      <button class="btn" id="club-look">Open your character</button>
+      <p class="test">Test mode: nothing is charged, and it never comes out of your poker balance.</p>
     </section>
   </div>`;
   $('#pg-back').onclick = goLobby;
   const j = $('#club-join'); if (j) j.onclick = () => send({ t: 'club', action: 'join' });
-  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pro Pass?</h2><p class="wait">You’ll go back to the Black Room theme and a free avatar.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
+  const c = $('#club-cancel'); if (c) c.onclick = () => openModal(`<h2>Cancel Pro Pass?</h2><p class="wait">You’ll go back to the Black Room theme, and any Pro Pass parts come off your character.</p><div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary" id="cc-go">Cancel membership</button></div>`, () => { $('#cc-go').onclick = () => { closeModal(); send({ t: 'club', action: 'cancel' }); }; });
   app.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => {
     if (b.dataset.locked) { toast('That theme comes with Pro Pass'); return; }
     send({ t: 'setTheme', theme: b.dataset.theme });
   });
-  app.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => send({ t: 'buyAvatar', a: +b.dataset.buy }));
+  $('#club-look').onclick = renderProfileEdit;
   bindFeltPicker(app);
 }
 function feltPickerHTML(me, C, member) {
@@ -1453,7 +1578,7 @@ function renderStage() {
     } else if (!isMe && s.cards.length && (shown || (!s.folded && T.phase === 'play'))) fan = hole;
     const side = (isMe ? 'right' : x < 50 ? 'right' : 'left') + (!isMe && Math.abs(y - 48) < 16 ? ' mid' : '');
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
-      <div class="sp2 ${side}">
+      <div class="sp2 ${side} ${specialOf(s.avatar) ? 'vip sp-' + specialOf(s.avatar) : ''}">
         ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
         <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
         <div class="sp-plate"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>

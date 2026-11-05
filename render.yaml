@@ -10,6 +10,10 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
+      # who can change other players' looks and give out specials (comma-separated emails).
+      # Set the value in the Render dashboard so it never lives in the code.
+      - key: ADMIN_EMAILS
+        sync: false
     # disk:
     #   name: pokr-data
     #   mountPath: /var/data

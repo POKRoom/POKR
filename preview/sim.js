@@ -5,6 +5,7 @@
   const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
   const { money } = require('./cards');
   const shop = require('./shop');
+  const looks = require('./looks');
   const { createManager } = require('./tourneys');
   const REACTIONS = ['👍', '😂', '🔥', '😱', '💀', '👏', '🤡', '💰'];
   const START = 100000, REFILL_BELOW = 10000, KEY = 'pokr.preview.v2';
@@ -28,8 +29,27 @@
     const now = Date.now();
     const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
     const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
-    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, specials: u.specials || [], admin: true, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
   };
+  // Preview: you're the admin, and the bots are the other players you can restyle.
+  const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
+  const startLook = av => { const ch = looks.cleanLook(av && av.ch); return ch && !ch.sp && !looks.wearError({}, ch, false) ? ch : looks.randomLook(); };
+  function dressBots(t) {
+    const L = db.botLooks || {};
+    for (const s of t.seats) if (s && s.kind === 'bot' && L[s.name]) s.avatar = withLook(L[s.name]);
+  }
+  function adminList(q) {
+    q = String(q || '').toLowerCase();
+    const rows = [];
+    if (db.user) rows.push({ id: 'me', name: db.user.name, avatar: db.user.avatar, email: db.user.email || null, guest: !!db.user.guest, hands: db.user.stats.hands, specials: db.user.specials || [] });
+    const seen = new Set(Object.keys(db.bots));
+    for (const t of tables.values()) for (const st of t.seats) if (st && st.kind === 'bot') seen.add(st.name);
+    for (const name of seen) {
+      const ch = (db.botLooks || {})[name];
+      rows.push({ id: 'bot:' + name, name, avatar: ch ? withLook(ch) : { a: -1, c: (db.bots[name] || {}).c || 0 }, email: null, guest: true, bot: true, hands: (db.bots[name] || {}).hands || 0, specials: (db.botSpecials || {})[name] || [] });
+    }
+    return rows.filter(r => !q || r.name.toLowerCase().includes(q));
+  }
   const sendMe = () => { if (db.user) out({ t: 'me', user: meOf(db.user) }); };
   const sendCatalog = () => out({ t: 'catalog', catalog: shop.catalog() });
   function leaderboard() {
@@ -59,7 +79,7 @@
     onChange(t) {
       if (t._q) return;
       t._q = true;
-      setTimeout(() => { t._q = false; if (client && client.code === t.code) out({ t: 'state', s: t.view(db.user && db.user.id) }); }, 0);
+      setTimeout(() => { t._q = false; dressBots(t); if (client && client.code === t.code) out({ t: 'state', s: t.view(db.user && db.user.id) }); }, 0);
     },
     onHandEnd(t, summary) {
       for (const r of summary) {
@@ -166,7 +186,7 @@
       if (name.length < 2) return out({ t: 'authError', message: 'Pick a name with at least 2 characters' });
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return out({ t: 'authError', message: 'Enter a valid email address' });
       if (String(m.password || '').length < 8) return out({ t: 'authError', message: 'Use a password with at least 8 characters' });
-      db.user = { id: 'me', email, pw: pwHash(m.password), name, avatar: m.avatar, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
+      db.user = { id: 'me', email, pw: pwHash(m.password), name, avatar: withLook(startLook(m.avatar)), bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
       db.token = Math.random().toString(36).slice(2);
       persist();
       out({ t: 'token', token: db.token });
@@ -175,7 +195,7 @@
     guest(c, m) {
       const name = String(m.name || '').trim().slice(0, 16);
       if (name.length < 2) return out({ t: 'authError', message: 'Pick a name with at least 2 characters' });
-      db.user = { id: 'me', guest: true, email: null, name, avatar: m.avatar || { a: 0, c: 0 }, bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
+      db.user = { id: 'me', guest: true, email: null, name, avatar: withLook(startLook(m.avatar)), bankroll: START, atTables: {}, stats: { hands: 0, won: 0, biggestPot: 0, net: 0 }, hist: [] };
       db.token = Math.random().toString(36).slice(2);
       persist();
       out({ t: 'token', token: db.token });
@@ -194,11 +214,60 @@
       if (!db.user) return;
       const name = String(m.name || '').trim().slice(0, 16);
       if (name.length < 2) return out({ t: 'error', message: 'Pick a name with at least 2 characters' });
-      if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
-      db.user.name = name; db.user.avatar = m.avatar;
-      for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = m.avatar; hooks.onChange(t); } }
+      let avatar;
+      if (m.avatar && m.avatar.ch) {
+        const ch = looks.cleanLook(m.avatar.ch);
+        if (!ch) return out({ t: 'error', message: 'Something’s off with that character. Try again.' });
+        shop.ensure(db.user);
+        const why = looks.wearError(db.user, ch, !!db.user.club.active);
+        if (why) return out({ t: 'error', message: why });
+        avatar = withLook(ch);
+      } else {
+        if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
+        avatar = m.avatar;
+      }
+      db.user.name = name; db.user.avatar = avatar;
+      for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = avatar; hooks.onChange(t); } }
       persist();
       sendMe();
+    },
+    adminUsers(c, m) { out({ t: 'adminUsers', list: adminList(m.q) }); },
+    adminLook(c, m) {
+      const ch = looks.cleanLook(m.ch);
+      if (!ch) return out({ t: 'error', message: 'Couldn’t save that look' });
+      const id = String(m.userId || '');
+      if (id === 'me') {
+        if (ch.sp && !(db.user.specials || []).includes(ch.sp)) db.user.specials = [...(db.user.specials || []), ch.sp];
+        db.user.avatar = withLook(ch);
+        for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
+        sendMe();
+      } else if (id.startsWith('bot:')) {
+        const name = id.slice(4);
+        db.botLooks = db.botLooks || {}; db.botLooks[name] = ch;
+        if (ch.sp) { db.botSpecials = db.botSpecials || {}; db.botSpecials[name] = [...new Set([...(db.botSpecials[name] || []), ch.sp])]; }
+        for (const t of tables.values()) hooks.onChange(t);
+      }
+      persist();
+      out({ t: 'notice', message: 'Look saved' });
+      out({ t: 'adminUsers', list: adminList(m.q) });
+    },
+    adminGrant(c, m) {
+      const id = String(m.userId || ''), sp = String(m.sp || '');
+      if (!looks.SPECIAL_IDS.includes(sp)) return;
+      const toggle = arr => { const h = new Set(arr || []); if (m.on) h.add(sp); else h.delete(sp); return [...h]; };
+      if (id === 'me') {
+        db.user.specials = toggle(db.user.specials);
+        if (!m.on && db.user.avatar.ch && db.user.avatar.ch.sp === sp) db.user.avatar = withLook({ ...db.user.avatar.ch, sp: '' });
+        sendMe();
+      } else if (id.startsWith('bot:')) {
+        const name = id.slice(4);
+        db.botSpecials = db.botSpecials || {}; db.botSpecials[name] = toggle(db.botSpecials[name]);
+        const L = db.botLooks || {};
+        if (!m.on && L[name] && L[name].sp === sp) L[name] = { ...L[name], sp: '' };
+        for (const t of tables.values()) hooks.onChange(t);
+      }
+      persist();
+      out({ t: 'adminUsers', list: adminList(m.q) });
     },
     lobby() { out(lobby()); out({ t: 'tourneys', list: tm.list(db.user.id) }); },
     club(c, m) {

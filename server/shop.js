@@ -40,6 +40,7 @@ const FEES = { instantPct: 1.5, instantMinCents: 50 };
 const LIMITS = { minCents: 500, maxDepositCents: 100000 };
 const SETTLE_MS = Number((typeof process !== 'undefined' && process.env && process.env.CASHIER_SETTLE_MS) || 45000); // test mode stand-in for "1-3 business days"
 
+const looks = require('./looks');
 function ensure(u) {
   if (!u.club) u.club = { active: false };
   if (!u.theme) u.theme = 'lounge';
@@ -79,7 +80,11 @@ function club(u, action, now = Date.now()) {
     u.club = { active: false, endedAt: now };
     if (!canUseTheme(u, u.theme)) u.theme = 'lounge';
     if (!canUseFelt(u, u.felt)) u.felt = 'green';
-    if (u.avatar && !canUseAvatar(u, u.avatar.a)) u.avatar = { a: 0, c: 0 };
+    if (u.avatar && !canUseAvatar(u, u.avatar.a)) u.avatar = { a: 0, c: 0, ...(u.avatar.ch ? { ch: u.avatar.ch } : {}) };
+    // Pro Pass parts come off the character when the membership ends
+    const ch = u.avatar && u.avatar.ch;
+    if (ch && looks.CLUB_LOOKS.includes(ch.lk)) ch.lk = 0;
+    if (ch && looks.CLUB_JACKETS.includes(ch.jk)) { ch.jk = 0; u.avatar.c = 0; }
     return { ok: true, resetAvatar: true };
   }
   return { error: 'Unknown action' };

@@ -9,6 +9,14 @@ const { Table } = require('./engine');
 const { Store, START_BANKROLL } = require('./store');
 const { money } = require('./cards');
 const shop = require('./shop');
+const looks = require('./looks');
+// Admins can edit anyone's character and hand out special looks. Set ADMIN_EMAILS on the host
+// (comma-separated) so the list never lives in the code.
+const ADMINS = String(process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const isAdmin = u => !!(u && u.email && ADMINS.includes(u.email));
+// A character to save: the one they sent if it's valid and free, otherwise a random one.
+const startLook = av => { const ch = looks.cleanLook(av && av.ch); return ch && !ch.sp && !looks.wearError({}, ch, false) ? ch : looks.randomLook(); };
+const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
 const { createManager } = require('./tourneys');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -45,12 +53,20 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, specials: u.specials || [], admin: isAdmin(u), canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
   if (!u) return;
   for (const c of clients) if (c.userId === userId) send(c, { t: 'me', user: meOf(u) });
+}
+const notifyUser = (userId, msg) => { for (const c of clients) if (c.userId === userId) send(c, msg); };
+// Show someone's new name and look at every table they're sitting at.
+function restyleSeats(u) {
+  for (const t of tables.values()) {
+    const i = t.seatOf(u.id);
+    if (i >= 0) { t.seats[i].name = u.name; t.seats[i].avatar = u.avatar; broadcastTable(t); }
+  }
 }
 function lobbyPayload() {
   const list = [...tables.values()].filter(t => !t.isPrivate && t.humanCount() > 0).map(t => t.summary());
@@ -197,8 +213,7 @@ const handlers = {
     if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
     const name = cleanText(m.name, 16);
     if (name.length < 2) return send(c, { t: 'authError', message: 'Pick a name with at least 2 characters' });
-    if (!validAvatar(m.avatar) || m.avatar.a >= shop.FREE_AVATARS) return send(c, { t: 'authError', message: 'Pick an avatar' });
-    const r = store.signup({ email: m.email, password: m.password, name, avatar: { a: m.avatar.a, c: m.avatar.c } });
+    const r = store.signup({ email: m.email, password: m.password, name, avatar: withLook(startLook(m.avatar)) });
     if (r.error) return send(c, { t: 'authError', message: r.error });
     c.userId = r.user.id; c.token = r.token;
     send(c, { t: 'token', token: r.token });
@@ -210,8 +225,7 @@ const handlers = {
     if (!allowAuthAttempt(c)) return send(c, { t: 'authError', message: 'Too many tries. Wait a minute and try again.' });
     const name = cleanText(m.name, 16);
     if (name.length < 2) return send(c, { t: 'authError', message: 'Pick a name with at least 2 characters' });
-    const avatar = validAvatar(m.avatar) && m.avatar.a < shop.FREE_AVATARS ? { a: m.avatar.a, c: m.avatar.c } : { a: 0, c: Math.floor(Math.random() * 8) };
-    const r = store.guest({ name, avatar });
+    const r = store.guest({ name, avatar: withLook(startLook(m.avatar)) });
     c.userId = r.user.id; c.token = r.token;
     send(c, { t: 'token', token: r.token });
     send(c, { t: 'me', user: meOf(r.user) });
@@ -238,19 +252,63 @@ const handlers = {
   profile(c, m) {
     const name = cleanText(m.name, 16);
     if (name.length < 2) return send(c, { t: 'error', message: 'Pick a name with at least 2 characters' });
-    if (!validAvatar(m.avatar)) return send(c, { t: 'error', message: 'Pick an avatar' });
-    const avatar = { a: m.avatar.a, c: m.avatar.c };
     const u = c.userId && store.byId(c.userId);
-    if (u && !shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
-    if (u) {
-      u.name = name; u.avatar = avatar;
-      store.save();
-      for (const t of tables.values()) {
-        const i = t.seatOf(u.id);
-        if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = avatar; broadcastTable(t); }
-      }
-      sendMe(u.id);
+    if (!u) return;
+    let avatar;
+    if (m.avatar && m.avatar.ch) {
+      const ch = looks.cleanLook(m.avatar.ch);
+      if (!ch) return send(c, { t: 'error', message: 'Something’s off with that character. Try again.' });
+      shop.ensure(u);
+      const why = looks.wearError(u, ch, !!u.club.active);
+      if (why) return send(c, { t: 'error', message: why });
+      avatar = withLook(ch);
+    } else {
+      if (!validAvatar(m.avatar)) return send(c, { t: 'error', message: 'Pick an avatar' });
+      avatar = { a: m.avatar.a, c: m.avatar.c, ...(u.avatar && u.avatar.ch ? { ch: u.avatar.ch } : {}) };
+      if (!shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
     }
+    u.name = name; u.avatar = avatar;
+    store.save();
+    restyleSeats(u);
+    sendMe(u.id);
+  },
+
+  // ---- admin: edit anyone's character, give out special looks ----
+  adminUsers(c, m) {
+    if (!isAdmin(store.byId(c.userId))) return send(c, { t: 'error', message: 'Admins only' });
+    const q = cleanText(m.q || '', 40).toLowerCase();
+    const list = store.all().filter(u => !q || String(u.name).toLowerCase().includes(q) || String(u.email || '').includes(q))
+      .sort((a, b) => (b.stats.hands || 0) - (a.stats.hands || 0)).slice(0, 60)
+      .map(u => ({ id: u.id, name: u.name, avatar: u.avatar, email: u.email || null, guest: !!u.guest, hands: u.stats.hands || 0, specials: u.specials || [] }));
+    send(c, { t: 'adminUsers', list });
+  },
+  adminLook(c, m) {
+    const me = store.byId(c.userId);
+    if (!isAdmin(me)) return send(c, { t: 'error', message: 'Admins only' });
+    const u = store.byId(String(m.userId || ''));
+    const ch = looks.cleanLook(m.ch);
+    if (!u || !ch) return send(c, { t: 'error', message: 'Couldn’t save that look' });
+    // an admin can dress anyone in anything; a special they put on someone is also given to them
+    if (ch.sp && !(u.specials || []).includes(ch.sp)) u.specials = [...(u.specials || []), ch.sp];
+    u.avatar = withLook(ch);
+    store.save(); restyleSeats(u); sendMe(u.id);
+    if (u.id !== me.id) notifyUser(u.id, { t: 'notice', message: `${me.name} changed your look` });
+    handlers.adminUsers(c, { q: m.q });
+  },
+  adminGrant(c, m) {
+    const me = store.byId(c.userId);
+    if (!isAdmin(me)) return send(c, { t: 'error', message: 'Admins only' });
+    const u = store.byId(String(m.userId || ''));
+    const sp = String(m.sp || '');
+    if (!u || !looks.SPECIAL_IDS.includes(sp)) return send(c, { t: 'error', message: 'Couldn’t do that' });
+    const has = new Set(u.specials || []);
+    if (m.on) has.add(sp); else has.delete(sp);
+    u.specials = [...has];
+    if (!m.on && u.avatar && u.avatar.ch && u.avatar.ch.sp === sp) { u.avatar = withLook({ ...u.avatar.ch, sp: '' }); restyleSeats(u); }
+    store.save(); sendMe(u.id);
+    const nm = (looks.SPECIALS.find(x => x.id === sp) || {}).name;
+    if (m.on && u.id !== me.id) notifyUser(u.id, { t: 'notice', message: `${me.name} gave you ${nm}. Wear it from Name & avatar.` });
+    handlers.adminUsers(c, { q: m.q });
   },
 
   lobby(c) { send(c, lobbyPayload()); send(c, { t: 'tourneys', list: tm.list(c.userId) }); },
