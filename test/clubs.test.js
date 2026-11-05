@@ -105,4 +105,49 @@ assert.match(C.join('late', C.create('pro1', { name: 'Sixth for late', join: 'op
 assert.match(C.deleteClub('ben', id), /Only the owner/);
 assert.strictEqual(C.deleteClub('amy', id), null);
 assert.strictEqual(C.view(id, 'amy'), null);
-console.log('clubs test passed: Pro Pass to start, open/approval/invite joins, roles, bans, limits, chat, seasons and champions');
+
+// club chat: joins are posted, unread counts per member, reading clears them
+{
+  const opened = [];
+  const st2 = { clubs: new Map(), byId: id => users.get(id) || null, dropClub(id) { this.clubs.delete(id); } };
+  const D = createClubs({ store: st2, save() {}, changed() {}, notify() {}, clubActive: u => !!u.pro, makeId: () => 'N' + (++n).toString().padStart(5, '0'), now: () => t,
+    openNight: (club, night) => { opened.push([night.kind, night.next]); return { kind: night.kind, code: 'GAME' + opened.length }; } });
+  t = Date.parse('2026-11-05T20:00:00Z'); // Thursday, noon in Los Angeles
+  const cid = D.create('owner', { name: 'Night Owls', join: 'open' }).id;
+  t += 1000; D.join('amy', cid);
+  assert.ok(D.view(cid, 'owner').chat.some(x => x.sys && /Amy joined/.test(x.text)), 'joins are posted');
+  assert.strictEqual(D.mine('owner')[0].unread, 1);
+  t += 1000; D.chat('amy', cid, 'who’s in');
+  assert.strictEqual(D.mine('owner')[0].unread, 2);
+  assert.strictEqual(D.mine('amy')[0].unread, 0, 'your own messages are read');
+  assert.strictEqual(D.mine('owner')[0].last.text, 'who’s in');
+  D.markRead('owner', cid);
+  assert.strictEqual(D.mine('owner')[0].unread, 0);
+
+  // game nights: staff only, weekly in the scheduler's time zone, opening by themselves
+  assert.match(D.addNight('amy', cid, { kind: 'table', day: 4, time: '20:00', tz: 'America/Los_Angeles' }).err, /owner and managers/);
+  assert.match(D.addNight('owner', cid, { kind: 'table', day: 9, time: '20:00' }).err, /day/);
+  assert.match(D.addNight('owner', cid, { kind: 'table', day: 4, time: '8pm' }).err, /time/);
+  const tn = D.addNight('owner', cid, { kind: 'table', day: 4, time: '20:00', tz: 'America/Los_Angeles', stakes: '25-50', name: 'Thursday game' });
+  D.addNight('owner', cid, { kind: 'tourney', day: 4, time: '21:00', tz: 'America/Los_Angeles', buyIn: 2500, speed: 'turbo' });
+  const nights = D.view(cid, 'amy').nights;
+  assert.strictEqual(nights.length, 2);
+  assert.strictEqual(new Date(nights[0].next).toISOString(), '2026-11-06T04:00:00.000Z', '8 pm Pacific tonight');
+  assert.strictEqual(D.mine('amy')[0].nextNight, nights[0].next);
+  t = Date.parse('2026-11-06T03:40:00Z'); D.tick();
+  assert.deepStrictEqual(opened.map(x => x[0]), [], 'not yet: the table opens ten minutes early');
+  t = Date.parse('2026-11-06T03:51:00Z'); D.tick();
+  assert.deepStrictEqual(opened.map(x => x[0]), ['table'], 'the table opens ten minutes early');
+  t = Date.parse('2026-11-06T04:01:00Z'); D.tick();
+  assert.deepStrictEqual(opened.map(x => x[0]), ['table', 'tourney'], 'tournament registration opens an hour before it starts');
+  assert.strictEqual(opened[1][1], Date.parse('2026-11-06T05:00:00Z'), 'the tournament starts at 9 pm');
+  const v = D.view(cid, 'amy');
+  assert.ok(v.chat.some(x => x.sys && x.link && x.link.kind === 'table' && x.link.code === 'GAME1'), 'the chat links to the table');
+  assert.strictEqual(new Date(v.nights.find(x => x.id === tn.id).next).toISOString(), '2026-11-13T04:00:00.000Z', 'then next week');
+  D.tick(); assert.strictEqual(opened.length, 2, 'opens once a week');
+  assert.strictEqual(D.removeNight('owner', cid, tn.id), null);
+  assert.strictEqual(D.view(cid, 'owner').nights.length, 1);
+  D.post(cid, 'Amy won Friday Freezeout · $40');
+  assert.ok(D.view(cid, 'owner').chat.some(x => /Amy won/.test(x.text)));
+}
+console.log('clubs test passed: Pro Pass to start, open/approval/invite joins, roles, bans, limits, chat, seasons and champions, unread counts, game nights');

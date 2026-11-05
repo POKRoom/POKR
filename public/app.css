@@ -2515,3 +2515,35 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .tabpage .glist + .list { margin-top: 0; }
 .clubpage .sec { margin-top: 8px; }
 .clubpage .sec-head { margin-bottom: 0; min-height: 0; }
+
+/* CLUBS v2: unread badges, posts from the club, game nights */
+.tabbar .tab { position: relative; }
+.tbadge { position: absolute; top: 2px; left: calc(50% + 5px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--down); color: #fff;
+  font: 600 11px/17px var(--sans); font-style: normal; text-align: center; box-shadow: 0 0 0 2px var(--velvet, #111); pointer-events: none; }
+@media (min-width: 900px) { .tbadge { top: 6px; left: 30px; } }
+.cbadge.big { flex: none; min-width: 22px; height: 22px; border-radius: 11px; font-size: 12px; margin: 0; display: inline-grid; place-items: center; padding: 0 6px; background: var(--down); color: #fff; font-style: normal; font-weight: 600; }
+.club-row .gr-main > span.cr-new { color: var(--cream); }
+.club-row .cr-night { font-size: 13px !important; color: var(--brass) !important; }
+
+.csys { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 2px; padding: 10px 12px; border-radius: 12px; background: var(--panel); }
+.csys > span { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.csys b { font: 500 14px/1.35 var(--sans); color: var(--cream); }
+.csys time { font-size: 12px; color: var(--muted); }
+.csys .btn.small { flex: none; min-height: 36px; padding: 0 12px; font-size: 14px; }
+
+.sec-head .textbtn { min-height: 44px; padding: 0 4px; color: var(--brass); opacity: 1; font-weight: 600; }
+.grow.night { align-items: flex-start; padding-top: 12px; padding-bottom: 12px; }
+.gn-day { flex: none; width: 52px; display: flex; flex-direction: column; align-items: center; padding: 6px 0; border-radius: 10px; background: var(--panel-hi); }
+.gn-day b { font: 600 15px var(--sans); color: var(--cream); }
+.gn-day span { font: 500 11px var(--sans); color: var(--muted); white-space: nowrap; }
+.clubpage .glist .grow.night + .grow.night::before { left: 82px; }
+.gn-next { font-size: 13px !important; color: var(--brass) !important; }
+.gn-x { flex: none; width: 44px; height: 44px; margin: -6px -10px 0 0; display: grid; place-items: center; border: 0; background: none; color: var(--muted); border-radius: 10px; cursor: pointer; }
+.gn-x svg { width: 16px; height: 16px; }
+.gn-empty { width: 100%; text-align: center; cursor: pointer; color: inherit; font: inherit; }
+.gn-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.gn-days button { min-height: 44px; border: 0; border-radius: 10px; background: var(--panel-hi); color: var(--muted); font: 600 14px var(--sans); cursor: pointer; }
+.gn-days button[aria-checked=true] { background: var(--cream); color: var(--velvet, #111); }
+.dialog input[type=time] { width: 100%; min-height: 44px; font-size: 17px; padding: 0 12px; color-scheme: dark; }
+.dialog input[hidden] { display: none; }
+@media (min-width: 900px) { .ccomp { margin-left: 0; } }

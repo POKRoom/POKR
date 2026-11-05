@@ -335,7 +335,7 @@ function onMessage(m) {
       else if (S.view === 'cashier') renderCashier();
       break;
     }
-    case 'clubs': S.clubs = m.list; if (S.view === 'tabs' && S.tab === 'social') renderTabs(); break;
+    case 'clubs': S.clubs = m.list; if (S.view === 'tabs' && S.tab === 'social') renderTabs(); else tabBadge(); break;
     case 'clubState': onClubState(m.s); break;
     case 'clubInvite': showInvite(m.id, m.token); break;
     case 'clubGone': if (S.view === 'clubhome') { toast(S.clubS ? 'That club has closed' : 'No club with that code'); closeClubHome(); } break;
@@ -377,7 +377,7 @@ function routeClub() {
   const m = location.pathname.match(/^\/c\/([A-Za-z0-9]{3,8})/);
   return m ? { id: m[1].toUpperCase(), token: new URLSearchParams(location.search).get('i') } : null;
 }
-function enterApp() { const code = routeCode(), club = routeClub(); if (code) joinCode(code); else if (club) openClubHome(club.id, club.token); else goLobby(); }
+function enterApp() { send({ t: 'clubMine' }); S.clubsAt = Date.now(); const code = routeCode(), club = routeClub(); if (code) joinCode(code); else if (club) openClubHome(club.id, club.token); else goLobby(); }
 function joinCode(code) {
   S.view = 'table'; S.table = null; S.chat = []; S.actionKey = ''; S.chatOpen = false; S.menuOpen = false; S.unread = false;
   app.innerHTML = `<div class="tbl skel-table" aria-busy="true" aria-label="Joining table ${esc(code)}">
@@ -653,7 +653,7 @@ function renderTabs() {
   const body = { play: tabPlay, games: tabGames, bg: tabBg, tourneys: tabTourneys, social: tabSocial, wallet: tabWallet, me: tabMe }[S.tab]();
   app.innerHTML = `<div class="shell">
     <nav class="tabbar" aria-label="Sections"><span class="rail-logo logo" aria-hidden="true">${LOGO}</span>
-      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}<span>${l}</span></button>`).join('')}</nav>
+      ${TABS.map(([k, l]) => `<button class="tab t-${k}" data-tab="${k}" ${S.tab === k ? 'aria-current="page"' : ''}>${k === 'me' ? avatarHTML(me.avatar, me.name) : TICON[k]}${k === 'social' && clubUnread() ? `<i class="tbadge" aria-label="${clubUnread()} unread">${Math.min(99, clubUnread())}</i>` : ''}<span>${l}</span></button>`).join('')}</nav>
     <main class="tabpage ${same ? '' : 'enter'}" id="tabpage">${body.html}</main>
   </div>`;
   S.lastTab = S.tab; S.lastPainted = 'tabs';
@@ -787,6 +787,17 @@ function renderTourney(id, refresh) {
 }
 function closeTourney() { send({ t: 'tUnwatch' }); S.tourView = null; S.tour = null; goLobby(); }
 
+// The chosen start for a club tournament, as a moment in time (null: the host starts it).
+function hostStartsAt() {
+  const v = S.htStart || 'host';
+  if (v === 'host') return null;
+  if (typeof v === 'number') return Date.now() + v * 60000;
+  const el = $('#ht-at'); const hm = (el && el.value) || '20:00'; S.htAt = hm;
+  const [h, m] = hm.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  if (d.getTime() < Date.now() + 2 * 60000) d.setDate(d.getDate() + 1); // that time has passed today: tomorrow
+  return d.getTime();
+}
 function openHostTourney(opts = {}) {
   closeModal();
   S.ht = S.ht || { game: 'nlh', buyIn: 1000, speed: 'turbo', seats: 9, lateReg: true, reentry: false };
@@ -800,15 +811,22 @@ function openHostTourney(opts = {}) {
     <span class="lbl">Players per table</span><div class="hrow4">${[6, 7, 8, 9].map(n => opt('seats', n, n)).join('')}</div>
     <label class="switch"><input type="checkbox" id="ht-late" ${H.lateReg ? 'checked' : ''}> Late registration for the first 4 levels</label>
     <label class="switch"><input type="checkbox" id="ht-re" ${H.reentry ? 'checked' : ''}> One re-entry</label>
+    ${opts.clubId ? `<span class="lbl">Starts</span><div class="hrow4">${[['host', 'When I say'], [30, 'In 30 min'], [60, 'In 1 hour'], ['at', 'At a time']].map(([v, l]) => `<button type="button" class="hopt" data-hs="${v}" aria-pressed="${String(S.htStart || 'host') === String(v)}"><b>${l}</b></button>`).join('')}</div>
+      <input id="ht-at" type="time" value="${esc(S.htAt || '20:00')}" aria-label="Start time" ${S.htStart === 'at' ? '' : 'hidden'}>` : ''}
     <button class="btn primary" id="ht-go">Create tournament</button>
-    <p class="fine">You start it when everyone’s in. Friends join with the code.</p>`, () => {
-    document.querySelectorAll('.hopt').forEach(b => b.onclick = () => {
+    <p class="fine">${opts.clubId ? 'Members register from the club. With a start time it starts by itself if at least 2 are in.' : 'You start it when everyone’s in. Friends join with the code.'}</p>`, () => {
+    document.querySelectorAll('[data-hs]').forEach(b => b.onclick = () => {
+      S.htStart = isNaN(+b.dataset.hs) ? b.dataset.hs : +b.dataset.hs;
+      document.querySelectorAll('[data-hs]').forEach(x => x.setAttribute('aria-pressed', x.dataset.hs === String(S.htStart)));
+      $('#ht-at').hidden = S.htStart !== 'at';
+    });
+    document.querySelectorAll('.hopt[data-hk]').forEach(b => b.onclick = () => {
       const k = b.dataset.hk; H[k] = isNaN(+b.dataset.hv) ? b.dataset.hv : +b.dataset.hv;
       document.querySelectorAll(`.hopt[data-hk="${k}"]`).forEach(x => x.setAttribute('aria-pressed', String(H[k]) === x.dataset.hv));
     });
     $('#ht-late').onchange = e => { H.lateReg = e.target.checked; };
     $('#ht-re').onchange = e => { H.reentry = e.target.checked; };
-    $('#ht-go').onclick = () => { const name = $('#ht-name').value; closeModal(); send({ t: 'tHost', name, ...H, clubId: opts.clubId }); };
+    $('#ht-go').onclick = () => { const name = $('#ht-name').value; const startsAt = opts.clubId ? hostStartsAt() : undefined; closeModal(); send({ t: 'tHost', name, ...H, clubId: opts.clubId, startsAt }); };
   });
 }
 
@@ -1080,12 +1098,34 @@ function crestHTML(cr, size = 40) {
 const clubAgo = ts => { const s = Math.max(0, (Date.now() - ts) / 1000); return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
 const monthName = ym => { if (!ym) return ''; const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
 const hasPass = () => !!(S.me && S.me.club && S.me.club.active);
+// just the Clubs tab's unread count, without repainting the page underneath
+function tabBadge() {
+  const tab = document.querySelector('.tabbar .t-social'); if (!tab) return;
+  const n = clubUnread(); let b = tab.querySelector('.tbadge');
+  if (!n) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('i'); b.className = 'tbadge'; tab.insertBefore(b, tab.querySelector('span:last-child')); }
+  b.textContent = Math.min(99, n); b.setAttribute('aria-label', n + ' unread');
+}
+const clubUnread = () => (S.clubs || []).reduce((a, c) => a + (c.unread || 0), 0);
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const myZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch { return 'America/Los_Angeles'; } };
+// "tonight 8:00 PM", "tomorrow 8:00 PM", "Sun 7:00 PM", "Nov 20, 8:00 PM", in the viewer's own time
+function nightWhen(ts) {
+  const d = new Date(ts), now = new Date();
+  const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const days = Math.round((new Date(d.toDateString()) - new Date(now.toDateString())) / 864e5);
+  if (days === 0) return `${d.getHours() >= 17 ? 'tonight' : 'today'} ${t}`;
+  if (days === 1) return `tomorrow ${t}`;
+  if (days < 7) return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${t}`;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${t}`;
+}
 
 function myClubsHTML() {
   const list = S.clubs;
   const rows = !list ? skelRows(2) : list.length ? `<div class="glist">${list.map(c => `
     <button class="grow club-row" data-club="${esc(c.id)}">${crestHTML(c.crest, 40)}
-      <span class="gr-main"><b>${esc(c.name)}</b><span>${c.members} member${c.members === 1 ? '' : 's'}${c.role !== 'member' ? ` · ${ROLE_NAME[c.role]}` : ''}${c.champion ? ` · Champion ${esc(c.champion)}` : ''}</span></span>${TICON.chev}</button>`).join('')}</div>`
+      <span class="gr-main"><b>${esc(c.name)}</b><span class="${c.unread ? 'cr-new' : ''}">${c.last ? `${c.last.name ? esc(c.last.name) + ': ' : ''}${esc(c.last.text)}` : `${c.members} member${c.members === 1 ? '' : 's'}`}</span>${c.nextNight ? `<span class="cr-night">Next game night ${nightWhen(c.nextNight)}</span>` : ''}</span>
+      ${c.unread ? `<i class="cbadge big">${Math.min(99, c.unread)}</i>` : ''}${TICON.chev}</button>`).join('')}</div>`
     : `<div class="empty card-empty"><p>You’re not in a club yet.</p><p class="sub">A club is your group’s own room: its games, standings, a champion every month, and a chat that stays.</p></div>`;
   const full = list && list.length >= 5;
   return `${rows}
@@ -1196,7 +1236,7 @@ function renderClubHome(keep) {
     <div class="pagebar"><button class="btn small ghost" id="pg-back">‹ Clubs</button><h1 class="pb-title">${esc(C.name)}</h1><button class="btn small ghost" id="cl-more" aria-label="${staff ? 'Club settings' : 'More'}">${staff ? 'Settings' : 'More'}</button></div>
     <header class="club-head">${crestHTML(C.crest, 56)}<div class="ch-txt"><h2>${esc(C.name)}</h2><span>Season ${C.season.n} · ${C.members} member${C.members === 1 ? '' : 's'} · <span class="mono-code">${esc(C.id)}</span></span></div></header>
     ${C.announcement ? `<section class="club-note"><span class="cn-lbl">Pinned · ${esc((C.people.find(p => p.id === C.announcement.by) || {}).name || 'Club')} · ${clubAgo(C.announcement.at)}</span><p>${esc(C.announcement.text)}</p></section>` : ''}
-    <div class="seg2 seg4" role="tablist">${[['games', 'Games'], ['standings', 'Standings'], ['chat', 'Chat'], ['members', 'Members']].map(([k, l]) => `<button role="tab" data-cseg="${k}" aria-selected="${seg === k}">${l}${k === 'members' && staff && reqs ? `<i class="cbadge">${reqs}</i>` : ''}</button>`).join('')}</div>
+    <div class="seg2 seg4" role="tablist">${[['games', 'Games'], ['standings', 'Standings'], ['chat', 'Chat'], ['members', 'Members']].map(([k, l]) => `<button role="tab" data-cseg="${k}" aria-selected="${seg === k}">${l}${k === 'members' && staff && reqs ? `<i class="cbadge">${reqs}</i>` : ''}${k === 'chat' && seg !== 'chat' && C.unread ? `<i class="cbadge">${Math.min(99, C.unread)}</i>` : ''}</button>`).join('')}</div>
     ${body.html}
   </div>`;
   if (!keep) enter();
@@ -1208,6 +1248,7 @@ function renderClubHome(keep) {
   if (inp2 && draft) inp2.value = draft;
   if (inp2 && focused) inp2.focus({ preventScroll: true });
   if (keep) { if (seg === 'chat' && atBottom) scrollChat(); else window.scrollTo(0, y); }
+  if (seg === 'chat' && C.unread) { C.unread = 0; send({ t: 'clubRead', id: C.id }); }
 }
 const scrollChat = () => requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
 
@@ -1241,28 +1282,91 @@ function clubGames(C) {
   const live = G.tables.length + G.tourneys.length + G.boards.length;
   const html = `
     <button class="btn primary cl-start" id="cg-new">${TICON.plus}<span>Start a club game</span></button>
+    ${nightsHTML(C)}
     ${G.tables.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Tables</h2></div><div class="glist">${G.tables.map(tableRow).join('')}</div></section>` : ''}
     ${G.tourneys.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Tournaments</h2></div>${tourRows(G.tourneys)}</section>` : ''}
     ${G.boards.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Backgammon</h2></div><div class="glist bg-list">${G.boards.map(b => `
         <button class="grow" data-board="${b.code}"><span class="bg-faces">${b.seats.map(x => (x ? `<span class="pmini">${portrait(x.avatar, x.name)}</span>` : '<span class="pmini open">+</span>')).join('')}</span>
           <span class="gr-main"><b>${esc(b.name)}</b><span>${bgPer(b.stake)} · buy-in ${money(b.buyIn)}</span></span>
           <span class="gr-side ${b.seats.every(Boolean) ? 'full' : ''}">${b.seats.every(Boolean) ? 'Watch' : 'Seat open'}</span>${TICON.chev}</button>`).join('')}</div></section>` : ''}
-    ${live ? '' : '<div class="empty card-empty"><p>Nothing running right now.</p><p class="sub">Start a table, a tournament or a backgammon board. Only members can sit.</p></div>'}
+    ${live ? '' : `<div class="empty card-empty"><p>Nothing running right now.</p><p class="sub">${(C.nights || []).length ? `The next game night opens ${nightWhen(Math.min(...C.nights.map(n => n.next)))}.` : 'Start a table, a tournament or a backgammon board. Only members can sit.'}</p></div>`}
     <p class="fine left">Results at club games count toward the standings. Everyone plays from their own balance.</p>`;
   const bind = () => {
     $('#cg-new').onclick = () => openClubGameSheet(C);
+    bindNights(C);
     app.querySelectorAll('[data-join]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.join); joinCode(b.dataset.join); });
     app.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
     app.querySelectorAll('[data-board]').forEach(b => b.onclick = () => openBoard(b.dataset.board));
   };
   return { html, bind };
 }
+function nightLabel(n) {
+  return n.kind === 'table' ? `${GAME_SHORT(n.game)} ${blindLabel(n.stakes)} · ${n.seats}-max table` : `${n.buyIn ? money(n.buyIn) : 'Free'} ${GAME_SHORT(n.game)} tournament · ${n.speed[0].toUpperCase() + n.speed.slice(1)}`;
+}
+function nightsHTML(C) {
+  const N = C.nights || [], staff = C.role !== 'member';
+  if (!N.length && !staff) return '';
+  const local = n => new Date(n.next).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `<section class="sec"><div class="sec-head"><h2 class="sec-title">Game nights</h2>${staff && N.length < 7 ? '<button class="textbtn" id="gn-add">Add</button>' : ''}</div>
+    ${N.length ? `<div class="glist">${N.map(n => `
+      <div class="grow static night"><span class="gn-day"><b>${DAYS[new Date(n.next).getDay()].slice(0, 3)}</b><span>${local(n)}</span></span>
+        <span class="gr-main"><b>${esc(n.name)}</b><span>${nightLabel(n)}</span><span class="gn-next">Next: ${nightWhen(n.next)}</span></span>
+        ${staff ? `<button class="gn-x" data-night="${esc(n.id)}" aria-label="Remove ${esc(n.name)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>` : ''}</div>`).join('')}</div>`
+      : '<button class="empty card-empty gn-empty" id="gn-add2"><p>No game nights yet.</p><p class="sub">Set a weekly table or tournament and it opens by itself, every week.</p></button>'}
+  </section>`;
+}
+function bindNights(C) {
+  ['#gn-add', '#gn-add2'].forEach(q => { const b = $(q); if (b) b.onclick = () => openNightSheet(C); });
+  app.querySelectorAll('[data-night]').forEach(b => b.onclick = () => {
+    const n = C.nights.find(x => x.id === b.dataset.night); if (!n) return;
+    openModal(`<h2>Stop ${esc(n.name)}?</h2><p class="wait">It won’t open again. Anything already running keeps going.</p>
+      <div class="acts"><button class="btn" data-close>Keep it</button><button class="btn primary danger" id="gn-rm">Stop it</button></div>`, () => {
+      $('#gn-rm').onclick = () => { closeModal(); send({ t: 'clubNightRemove', id: C.id, night: n.id }); };
+    });
+  });
+}
+function openNightSheet(C) {
+  const st = S.nightDraft || (S.nightDraft = { kind: 'table', game: 'nlh', day: new Date().getDay(), time: '20:00', stakes: '25-50', seats: 6, buyIn: 1000, speed: 'turbo', name: '' });
+  const draw = () => {
+    if ($('#gn-name')) st.name = $('#gn-name').value;
+    if ($('#gn-time')) st.time = $('#gn-time').value || st.time;
+    const opt = (key, val, label, sub) => `<button type="button" class="hopt" data-nk="${key}" data-nv="${val}" aria-pressed="${String(st[key]) === String(val)}"><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</button>`;
+    openSheet(`<h2>Weekly game night</h2>
+      <input id="gn-name" maxlength="30" placeholder="${DAYS[st.day]} ${st.kind === 'table' ? 'game night' : 'tournament'}" aria-label="Name" value="${esc(st.name)}">
+      <span class="lbl">What</span><div class="hrow2">${opt('kind', 'table', 'Cash table', 'Opens 10 min early')}${opt('kind', 'tourney', 'Tournament', 'Register an hour early')}</div>
+      <span class="lbl">Game</span><div class="hrow2">${opt('game', 'nlh', 'Hold’em')}${opt('game', 'plo', 'Omaha')}</div>
+      <span class="lbl">Every</span><div class="gn-days" role="radiogroup" aria-label="Day">${DAYS.map((d, i) => `<button type="button" role="radio" data-nday="${i}" aria-checked="${st.day === i}" aria-label="${d}">${d.slice(0, 2)}</button>`).join('')}</div>
+      <span class="lbl">At</span><input id="gn-time" type="time" value="${esc(st.time)}" aria-label="Start time">
+      ${st.kind === 'table'
+        ? `<span class="lbl">Blinds</span><div class="hrow6">${STAKES.map(([k, sb, bb]) => opt('stakes', k, blinds(sb, bb))).join('')}</div>
+           <span class="lbl">Seats</span><div class="hrow4">${[6, 7, 8, 9].map(n => opt('seats', n, n)).join('')}</div>`
+        : `<span class="lbl">Buy-in</span><div class="hrow6">${[[0, 'Free'], [500, '$5'], [1000, '$10'], [2500, '$25'], [5000, '$50'], [10000, '$100']].map(([v, l]) => opt('buyIn', v, l)).join('')}</div>
+           <span class="lbl">Speed</span><div class="hrow4">${opt('speed', 'hyper', 'Hyper', '2 min')}${opt('speed', 'turbo', 'Turbo', '4 min')}${opt('speed', 'regular', 'Regular', '8 min')}${opt('speed', 'deep', 'Deep', '12 min')}</div>`}
+      <button class="btn primary" id="gn-go">Every ${DAYS[st.day]} at ${fmtTime(st.time)}</button>
+      <p class="fine">In your time zone. Members see it in theirs, and get a heads-up when it opens.</p>`, () => {
+      document.querySelectorAll('[data-nk]').forEach(b => b.onclick = () => { const k = b.dataset.nk; st[k] = isNaN(+b.dataset.nv) ? b.dataset.nv : +b.dataset.nv; draw(); });
+      document.querySelectorAll('[data-nday]').forEach(b => b.onclick = () => { st.day = +b.dataset.nday; draw(); });
+      $('#gn-time').onchange = draw;
+      $('#gn-go').onclick = () => {
+        st.name = $('#gn-name').value.trim(); st.time = $('#gn-time').value || st.time;
+        closeModal();
+        send({ t: 'clubNight', id: C.id, set: { ...st, name: st.name || `${DAYS[st.day]} ${st.kind === 'table' ? 'game night' : 'tournament'}`, tz: myZone() } });
+        st.name = '';
+        S.clubSeg = 'games';
+      };
+    });
+  };
+  draw();
+}
+const fmtTime = hm => { const [h, m] = String(hm).split(':').map(Number); return new Date(2026, 0, 1, h, m).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); };
 function openClubGameSheet(C) {
   openSheet(`<h2>Start a club game</h2><p class="wait">Only members of ${esc(C.name)} can sit.</p><div class="list">
     <button class="lrowbtn" id="cgs-t">${TICON.play}<div class="lr-txt"><b>Cash table</b><span>Hold’em or Omaha, 5 to 9 seats</span></div>${TICON.chev}</button>
     <button class="lrowbtn" id="cgs-m">${TICON.tourneys}<div class="lr-txt"><b>Tournament</b><span>Blind levels, payouts, a winner</span></div>${TICON.chev}</button>
     <button class="lrowbtn" id="cgs-b">${TICON.bg}<div class="lr-txt"><b>Backgammon board</b><span>Head to head for a stake per point</span></div>${TICON.chev}</button>
+    ${C.role !== 'member' ? `<button class="lrowbtn" id="cgs-n">${TICON.games}<div class="lr-txt"><b>Weekly game night</b><span>A table or tournament that opens every week</span></div>${TICON.chev}</button>` : ''}
   </div>`, () => {
+    if ($('#cgs-n')) $('#cgs-n').onclick = () => { closeModal(); openNightSheet(C); };
     $('#cgs-t').onclick = () => { closeModal(); openNewTable({ clubId: C.id, clubName: C.name }); };
     $('#cgs-m').onclick = () => { closeModal(); openHostTourney({ clubId: C.id, clubName: C.name }); };
     $('#cgs-b').onclick = () => { closeModal(); openNewBoard(false, { clubId: C.id, clubName: C.name }); };
@@ -1293,12 +1397,14 @@ function clubChat(C) {
   let last = null;
   const html = `
     <div class="cchat">${items.length ? items.map(x => {
+      if (x.sys) { last = null; return sysLine(x); }
       const same = last && last.uid === x.uid && x.at - last.at < 5 * 60000; last = x;
       return `<div class="cmsg ${same ? 'cont' : ''} ${x.uid === S.me.id ? 'cm-me' : ''}">${same ? '<span class="cm-gap"></span>' : `<span class="pmini">${portrait(x.avatar, x.name)}</span>`}
         <div class="cm-body">${same ? '' : `<span class="cm-who"><b>${esc(x.name)}</b><time>${clubAgo(x.at)}</time></span>`}<p>${esc(x.text)}</p></div></div>`;
     }).join('') : '<div class="empty card-empty"><p>No messages yet.</p><p class="sub">Say hello. The chat stays, so people see it when they come back.</p></div>'}</div>
     <form class="ccomp" id="ccf"><input id="cc-in" maxlength="300" placeholder="Message ${esc(C.name)}" autocomplete="off" aria-label="Message"><button class="btn primary" type="submit">Send</button></form>`;
   const bind = () => {
+    bindSysLinks();
     $('#ccf').onsubmit = e => {
       e.preventDefault();
       const v = $('#cc-in').value.trim(); if (!v) return;
@@ -1308,6 +1414,16 @@ function clubChat(C) {
   return { html, bind };
 }
 
+// A line from the club itself, with a button when it points at a game.
+function sysLine(x) {
+  const L = x.link;
+  const btn = !L ? '' : L.kind === 'table' ? `<button class="btn small" data-sys-table="${esc(L.code)}">Take a seat</button>` : `<button class="btn small" data-sys-tour="${esc(L.code)}">${L.at ? `Starts ${nightWhen(L.at)}` : 'Open'}</button>`;
+  return `<div class="csys"><span><b>${esc(x.text)}</b><time>${clubAgo(x.at)}</time></span>${btn}</div>`;
+}
+function bindSysLinks() {
+  app.querySelectorAll('[data-sys-table]').forEach(b => b.onclick = () => { nav('/t/' + b.dataset.sysTable); joinCode(b.dataset.sysTable); });
+  app.querySelectorAll('[data-sys-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.sysTour));
+}
 function clubMembers(C, staff) {
   const order = { owner: 0, manager: 1, member: 2 };
   const people = [...C.people].sort((a, b) => order[a.role] - order[b.role] || a.name.localeCompare(b.name));

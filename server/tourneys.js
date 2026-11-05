@@ -142,6 +142,8 @@ function createManager(deps) {
         id: deps.makeCode(), name: String(cfg.name || '').trim().slice(0, 30) || `${info.name}'s tournament`, buyIn, speed,
         seatsPerTable: Math.max(5, Math.min(9, cfg.seats || 9)), lateRegLevels: cfg.lateReg ? 4 : 0, reentries: cfg.reentry ? 1 : 0,
         hostId: userId, isPrivate: true, game: cfg.game === 'plo' ? 'plo' : 'nlh',
+        // a set start time (a club tournament or game night): it starts by itself, or cancels if fewer than 2 entered
+        startsAt: Number.isFinite(cfg.startsAt) && cfg.startsAt > Date.now() + 30000 && cfg.startsAt < Date.now() + 14 * 864e5 ? Math.round(cfg.startsAt) : null,
       });
       if (cfg.clubId) t.clubId = cfg.clubId;
       return t;

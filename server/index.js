@@ -186,7 +186,11 @@ const tm = createManager({
     }
   },
   changed: tour => tourneyChanged(tour),
-  onResult(tour, p, info) { if (tour.clubId && clubsRef && p.userId) clubsRef.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn); },
+  onResult(tour, p, info) {
+    if (!tour.clubId || !clubsRef || !p.userId) return;
+    clubsRef.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn);
+    if (info.won) clubsRef.post(tour.clubId, `${p.name} won ${tour.name}${info.prize ? ` · ${money(info.prize)}` : ''}`);
+  },
 });
 let tourTimer = null;
 const dirtyTours = new Set();
@@ -249,6 +253,21 @@ const clubs = createClubs({
   clubActive: u => { shop.ensure(u); return !!(u.club && u.club.active); },
   notify: (userId, msg) => notifyUser(userId, msg),
   changed: club => { if (hub) hub.push(club); },
+  // A weekly game night comes round: open its table, or its tournament for registration.
+  openNight(club, n) {
+    if (n.kind === 'tourney') {
+      const t = tm.host(club.ownerId, { name: n.name, game: n.game, buyIn: n.buyIn, speed: n.speed, seats: n.seats, lateReg: true, clubId: club.id, startsAt: n.next });
+      tourneyChanged(t);
+      return { kind: 'tourney', code: t.id };
+    }
+    const st = STAKES[n.stakes] || STAKES['10-25'];
+    const code = makeCode();
+    const t = new Table({ code, name: n.name, sb: st[0], bb: st[1], hostId: club.ownerId, isPrivate: true, game: n.game, maxSeats: n.seats }, hooks);
+    t.clubId = club.id;
+    t.keepUntil = n.next + 90 * 60000; // stays open through the evening even before anyone sits
+    tables.set(code, t);
+    return { kind: 'table', code };
+  },
 });
 clubsRef = clubs;
 hub = createClubHub(clubs, {
@@ -257,7 +276,7 @@ hub = createClubHub(clubs, {
   tourneysFor: (id, uid) => [...tm.tours.values()].filter(t => t.clubId === id && t.status !== 'canceled').map(t => t.summary(uid)),
   boardsFor: id => bg.forClub(id),
 });
-setInterval(() => clubs.tick(), 60000).unref();
+setInterval(() => clubs.tick(), 15000).unref();
 const notMember = (clubId, c) => clubId && !clubs.isMember(clubId, c.userId);
 setInterval(() => bg.sweep(), 60000).unref();
 
@@ -311,7 +330,7 @@ const handlers = {
   tUnwatch(c) { c.tview = null; },
   tReg(c, m) { const tour = tm.tours.get(m.id); if (tour && notMember(tour.clubId, c)) return send(c, { t: 'error', message: 'This tournament is for club members' }); const e = tm.register(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); c.followTourney = true; send(c, { t: 'notice', message: 'You’re registered' }); tourneyChanged(tm.tours.get(m.id)); },
   tUnreg(c, m) { const e = tm.unregister(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); send(c, { t: 'notice', message: 'Unregistered. Your buy-in is back in your balance.' }); },
-  tHost(c, m) { if (m.clubId && notMember(String(m.clubId).toUpperCase(), c)) return send(c, { t: 'error', message: 'Join the club to host its tournaments' }); const t = tm.host(c.userId, { ...m, clubId: m.clubId ? String(m.clubId).toUpperCase() : null }); if (t.clubId) { const club = clubs.find(t.clubId); if (club) hub.push(club); } c.tview = t.id; send(c, { t: 'tourneyHosted', id: t.id }); send(c, { t: 'tourney', d: t.detail(c.userId) }); },
+  tHost(c, m) { if (m.clubId && notMember(String(m.clubId).toUpperCase(), c)) return send(c, { t: 'error', message: 'Join the club to host its tournaments' }); const t = tm.host(c.userId, { ...m, clubId: m.clubId ? String(m.clubId).toUpperCase() : null }); if (t.clubId) { const u = store.byId(c.userId); clubs.post(t.clubId, `${u ? u.name : 'Someone'} set up ${t.name}`, { kind: 'tourney', code: t.id, at: t.startsAt }); } c.tview = t.id; send(c, { t: 'tourneyHosted', id: t.id }); send(c, { t: 'tourney', d: t.detail(c.userId) }); },
   tStart(c, m) { const e = tm.start(c.userId, m.id); if (e) return send(c, { t: 'error', message: e }); },
   tBots(c, m) { const e = tm.addBots(c.userId, m.id, Number(m.n)); if (e) return send(c, { t: 'error', message: e }); },
   tSeat(c, m) {
@@ -657,7 +676,7 @@ setInterval(() => {
       if (s && s.kind === 'human' && !s.connected && s.disconnectedAt && now - s.disconnectedAt > 5 * 60000) t.removeSeat(i);
     });
     const watching = [...clients].some(c => c.code === t.code);
-    if (t.humanCount() === 0 && !watching && now - t.lastActive > 10 * 60000) {
+    if (t.humanCount() === 0 && !watching && now - t.lastActive > 10 * 60000 && !(t.keepUntil && now < t.keepUntil)) {
       t.destroy();
       tables.delete(t.code);
       lobbyChanged();

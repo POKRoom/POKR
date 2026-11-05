@@ -141,7 +141,11 @@
     credit(userId, cents) { const u = db.user; if (!u || !cents) return; u.bankroll += cents; persist(); sendMe(); },
     userInfo() { return { name: db.user.name, avatar: db.user.avatar }; },
     notify(userId, msg) { out(msg); },
-    onResult(tour, p, info) { if (tour.clubId && p.userId) clubs.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn); },
+    onResult(tour, p, info) {
+      if (!tour.clubId || !p.userId) return;
+      clubs.record(tour.clubId, p.userId, (info.prize || 0) - tour.buyIn);
+      if (info.won) clubs.post(tour.clubId, `${p.name} won ${tour.name}${info.prize ? ` · ${money(info.prize)}` : ''}`);
+    },
     moveClient(userId, code) {
       if (!client) return;
       if (!(client.code && tm.byTable.has(client.code)) && !client.followTourney) return;
@@ -204,6 +208,20 @@
     notify: (userId, msg) => { if (db.user && userId === db.user.id) out(msg); },
     changed: club => hub.push(club),
     makeId: () => { let id; do id = makeCode(); while (clubMap.has(id)); return id; },
+    openNight(club, n) {
+      if (n.kind === 'tourney') {
+        const t = tm.host(club.ownerId, { name: n.name, game: n.game, buyIn: n.buyIn, speed: n.speed, seats: n.seats, lateReg: true, clubId: club.id, startsAt: n.next });
+        t.botPlan = { total: 7, until: n.next };
+        return { kind: 'tourney', code: t.id };
+      }
+      const st = STAKES[n.stakes] || STAKES['10-25'];
+      const code = makeCode();
+      const t = new Table({ code, name: n.name, sb: st[0], bb: st[1], hostId: club.ownerId, isPrivate: true, game: n.game, maxSeats: n.seats }, hooks);
+      t.clubId = club.id;
+      tables.set(code, t);
+      [1, 3].forEach(i => t.addBot(i));
+      return { kind: 'table', code };
+    },
   });
   const hub = createClubHub(clubs, {
     send: (c, msg) => out(msg),
@@ -216,10 +234,10 @@
   for (const [k, fn] of Object.entries(hub.handlers)) clubHandlers[k] = (c, m) => {
     c.userId = db.user.id;
     // first visit: you're already a member of the demo club, so there's something to see
-    if (!db.clubDemo) { db.clubDemo = true; const cl = clubs.find('NIGHT'); if (cl && !cl.members[db.user.id]) clubs.join(db.user.id, 'NIGHT'); }
+    if (!db.clubDemo) { db.clubDemo = true; const cl = clubs.find('NIGHT'); if (cl && !cl.members[db.user.id]) { clubs.join(db.user.id, 'NIGHT'); cl.members[db.user.id].read = 0; cl.members[db.user.id].role = 'manager'; saveClubs(); } }
     fn(c, m);
   };
-  setInterval(() => clubs.tick(), 60000);
+  setInterval(() => clubs.tick(), 5000);
   function tview(t) {
     const s = t.view(db.user && db.user.id);
     const cl = t.clubId && clubs.find(t.clubId);
@@ -259,6 +277,21 @@
     lines.forEach(([i, text], k) => c.chat.push({ id: 'seed' + k, uid: 'bot:' + names[i], name: names[i], text, at: now - (lines.length - k) * 41 * 60000 }));
     clubMap.set(c.id, c);
     saveClubs();
+  }
+  // Its weekly game nights: Thursday cash at 8 and a Sunday tournament, in this browser's time zone.
+  {
+    const cl = clubMap.get('NIGHT');
+    if (cl && !cl.nights) {
+      const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles'; } catch { return 'America/Los_Angeles'; } })();
+      const { nextWeekly } = require('./clubs');
+      cl.nights = [
+        { id: 'NGT01', kind: 'table', name: 'Thursday game night', day: 4, time: '20:00', tz, game: 'nlh', seats: 6, stakes: '25-50' },
+        { id: 'NGT02', kind: 'tourney', name: 'Sunday Freezeout', day: 0, time: '19:00', tz, game: 'nlh', seats: 9, buyIn: 1000, speed: 'turbo' },
+      ].map(n => ({ ...n, next: nextWeekly(n.day, n.time, n.tz, Date.now()) }));
+      cl.chat.splice(Math.max(0, cl.chat.length - 2), 0, { id: 'seeds1', uid: null, sys: true, text: 'Ozzie is the season 2 champion', at: Date.now() - 4 * 3600000 });
+      for (const uid of Object.keys(cl.members)) if (!cl.members[uid].read) cl.members[uid].read = uid.startsWith('bot:') ? Date.now() : 0;
+      saveClubs();
+    }
   }
   // Its table is running, with bots.
   {
@@ -310,7 +343,7 @@
       const clubId = m.clubId ? String(m.clubId).toUpperCase() : null;
       if (clubId && !clubs.isMember(clubId, db.user.id)) return out({ t: 'error', message: 'Join the club to host its tournaments' });
       const t = tm.host(db.user.id, { ...m, clubId });
-      if (clubId) { const cl = clubs.find(clubId); if (cl) hub.push(cl); } c.tview = t.id; out({ t: 'tourneyHosted', id: t.id }); out({ t: 'tourney', d: t.detail(db.user.id) }); },
+      if (clubId) clubs.post(clubId, `${db.user.name} set up ${t.name}`, { kind: 'tourney', code: t.id, at: t.startsAt }); c.tview = t.id; out({ t: 'tourneyHosted', id: t.id }); out({ t: 'tourney', d: t.detail(db.user.id) }); },
     tStart(c, m) { const e = tm.start(db.user.id, m.id); if (e) return out({ t: 'error', message: e }); },
     tBots(c, m) { const e = tm.addBots(db.user.id, m.id, Number(m.n)); if (e) return out({ t: 'error', message: e }); },
     tSeat(c, m) {

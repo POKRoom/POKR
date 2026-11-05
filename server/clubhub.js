@@ -61,6 +61,9 @@ function createClubHub(clubs, io) {
       c.lastClubChat = now;
       const e = clubs.chat(c.userId, m.id, m.text); if (e) err(c, e);
     },
+    clubRead(c, m) { clubs.markRead(c.userId, m.id); sendMine(c); },
+    clubNight(c, m) { const r = clubs.addNight(c.userId, m.id, m.set || {}); if (r.err) return err(c, r.err); io.send(c, { t: 'notice', message: 'Game night saved' }); },
+    clubNightRemove(c, m) { const e = clubs.removeNight(c.userId, m.id, String(m.night || '')); if (e) err(c, e); },
     clubDelete(c, m) { const e = clubs.deleteClub(c.userId, m.id); if (e) return err(c, e); c.club = null; sendMine(c); },
   };
   return { handlers, push, state };
