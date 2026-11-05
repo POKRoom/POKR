@@ -2269,3 +2269,5 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .sp2 .sp-plate .nm .vipstar { font-size: 11px; margin-left: 2px; }
 .vipsw .lr-txt b { display: inline-flex; align-items: center; gap: 4px; }
 .look-plate span.vipstar { display: inline; padding: 0; border: 0; background: none; margin-left: 4px; color: #F3C969; }
+.sng-seg { margin: 0 0 10px; display: inline-flex; }
+.sng-seg button { padding: 0 18px; }

@@ -13,6 +13,20 @@ const SERIES = [
   { key: 'turbo', name: 'Turbo Thirty', buyIn: 1000, speed: 'turbo', seats: 9, lateReg: 4, reentries: 0, everyMin: 30 },
 ];
 
+// Sit & Gos: one table, starts as soon as it fills. There's always one open at each of these.
+const SNG_TIERS = [
+  { key: 'h1', game: 'nlh', buyIn: 100, speed: 'hyper', seats: 6 },
+  { key: 'h5', game: 'nlh', buyIn: 500, speed: 'turbo', seats: 6 },
+  { key: 'h5n', game: 'nlh', buyIn: 500, speed: 'turbo', seats: 9 },
+  { key: 'h20', game: 'nlh', buyIn: 2000, speed: 'turbo', seats: 9 },
+  { key: 'h50', game: 'nlh', buyIn: 5000, speed: 'regular', seats: 6 },
+  { key: 'o2', game: 'plo', buyIn: 200, speed: 'hyper', seats: 6 },
+  { key: 'o10', game: 'plo', buyIn: 1000, speed: 'turbo', seats: 6 },
+  { key: 'o25', game: 'plo', buyIn: 2500, speed: 'turbo', seats: 6 },
+];
+// Seconds after the first person sits before bots fill the rest, so nobody waits forever.
+const SNG_FILL_AFTER = { live: 45, preview: 6 };
+
 function nextStart(ev, now, preview) {
   if (preview) return now + (ev.previewIn || 90) * 1000;
   if (ev.everyMin) { const ms = ev.everyMin * 60000; return Math.ceil((now + 60000) / ms) * ms; }
@@ -50,7 +64,7 @@ function createManager(deps) {
         deps.notify(p.userId, { t: 'tourneyResult', id: tour.id, name: tour.name, place: info.place, prize: info.prize, entries: info.entries, won: !!info.won, canReenter: !!info.canReenter, buyIn: tour.buyIn });
       },
       onRefund: (p, cents) => { if (p.kind === 'human' && p.userId && cents) deps.credit(p.userId, cents, `${tour.name} canceled: refund`); },
-      onFinish: () => { tour.closeAt = Date.now() + 15 * 60000; for (const t of tour.tables) tour.deps.destroyTable(t); if (tour.series) schedule(SERIES.find(s => s.key === tour.series)); },
+      onFinish: () => { tour.closeAt = Date.now() + (tour.sng ? 5 : 15) * 60000; for (const t of tour.tables) tour.deps.destroyTable(t); if (tour.series) schedule(SERIES.find(s => s.key === tour.series)); },
       onChange: () => deps.changed(tour),
       now: () => Date.now(),
     });
@@ -79,6 +93,17 @@ function createManager(deps) {
     SERIES[2].previewIn = 360; SERIES[2].previewBots = 20;
   }
   SERIES.forEach(schedule);
+
+  function openSng(tier) {
+    if ([...tours.values()].some(t => t.tier === tier.key && t.status === 'registering')) return;
+    const gameName = tier.game === 'plo' ? 'Omaha' : 'Hold’em';
+    const money = c => '$' + (c / 100).toLocaleString('en-US', c % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
+    make({
+      name: `${gameName} Sit & Go ${money(tier.buyIn)}`, sng: true, tier: tier.key, game: tier.game, buyIn: tier.buyIn,
+      speed: tier.speed, seatsPerTable: tier.seats, levelMs: deps.sngLevelMs || (deps.preview ? 60000 : undefined),
+    });
+  }
+  SNG_TIERS.forEach(openSng);
 
   const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
   const find = id => tours.get(String(id || '').toUpperCase()) || tours.get(String(id || ''));
@@ -145,6 +170,17 @@ function createManager(deps) {
           const have = [...t.players.values()].filter(p => p.kind === 'bot').length;
           if (due > have) t.addBots(due - have);
         }
+        // Sit & Go: bots fill the empty seats a little while after the first player sits, then it starts.
+        if (t.sng && t.status === 'registering') {
+          const humans = [...t.players.values()].filter(p => p.kind === 'human' && p.status === 'registered').length;
+          if (humans && !t.fillAt) t.fillAt = now + (deps.sngFillMs != null ? deps.sngFillMs : (deps.preview ? SNG_FILL_AFTER.preview : SNG_FILL_AFTER.live) * 1000);
+          if (!humans) t.fillAt = 0;
+          if (t.fillAt && now >= t.fillAt && t.registered < t.maxPlayers) t.addBots(t.maxPlayers - t.registered);
+          if (t.registered >= t.maxPlayers) {
+            t.start();
+            openSng(SNG_TIERS.find(x => x.key === t.tier));
+          }
+        }
         const before = t.status;
         t.tick();
         if (before === 'registering' && t.status === 'canceled' && t.series) schedule(SERIES.find(s => s.key === t.series));
@@ -156,4 +192,4 @@ function createManager(deps) {
   };
 }
 
-module.exports = { createManager, SERIES };
+module.exports = { createManager, SERIES, SNG_TIERS };

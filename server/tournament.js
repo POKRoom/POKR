@@ -27,8 +27,17 @@ const BOT_STYLES = ['rock', 'loose', 'aggro', 'caller'];
 
 // How many get paid, and how the pool splits. Small fields pay a fixed few; bigger fields pay ~15%
 // on a curve that gives the winner the biggest share, like a major's payout sheet.
-function payouts(entries, pool) {
+// Sit & Go: a fixed split set by the table size, whatever the field.
+const SNG_SPLITS = { 2: [100], 3: [100], 4: [100], 5: [65, 35], 6: [65, 35], 7: [50, 30, 20], 8: [50, 30, 20], 9: [50, 30, 20] };
+function payouts(entries, pool, split) {
   if (entries < 2) return [];
+  if (split) {
+    const w = split.slice(0, Math.max(1, Math.min(split.length, entries - 1)));
+    const sum = w.reduce((a, b) => a + b, 0);
+    const out = w.map(x => Math.floor((pool * x) / sum));
+    out[0] += pool - out.reduce((a, b) => a + b, 0);
+    return out.map((amount, i) => ({ place: i + 1, amount }));
+  }
   const paid = entries <= 6 ? 1 : entries <= 10 ? 2 : entries <= 17 ? 3 : Math.max(4, Math.ceil(entries * 0.15));
   const fixed = { 1: [100], 2: [65, 35], 3: [50, 30, 20], 4: [45, 27, 17, 11] };
   let w = fixed[paid] ? fixed[paid].slice() : Array.from({ length: paid }, (_, i) => 1 / Math.pow(i + 1, 1.05));
@@ -57,6 +66,11 @@ class Tournament {
     this.guarantee = cfg.guarantee || 0;
     this.game = cfg.game === 'plo' ? 'plo' : 'nlh';
     this.minPlayers = cfg.minPlayers || 2;
+    // Sit & Go: one table, starts the moment it fills, no late entries.
+    this.sng = !!cfg.sng;
+    this.maxPlayers = this.sng ? this.seatsPerTable : 0;
+    this.tier = cfg.tier || null;
+    if (this.sng) { this.lateRegLevels = 0; this.reentries = 0; this.startsAt = null; this.minPlayers = this.seatsPerTable; }
     this.isPrivate = !!cfg.isPrivate;
     this.deps = deps;
     this.status = 'registering';           // registering | running | finished | canceled
@@ -72,7 +86,7 @@ class Tournament {
 
   now() { return this.deps.now ? this.deps.now() : Date.now(); }
   get prizePool() { return Math.max(this.guarantee, this.entries * this.buyIn); }
-  get payouts() { return payouts(this.entries, this.prizePool); }
+  get payouts() { return payouts(this.entries, this.prizePool, this.sng ? SNG_SPLITS[this.seatsPerTable] : null); }
   get left() { let n = 0; for (const p of this.players.values()) if (p.status === 'playing') n++; return n; }
   get registered() { let n = 0; for (const p of this.players.values()) if (p.status === 'registered' || p.status === 'playing') n++; return n; }
   lateRegOpen() { return this.status === 'registering' || (this.status === 'running' && this.level < this.lateRegLevels && this.left > 1); }
@@ -82,6 +96,7 @@ class Tournament {
   canEnter(key) {
     const p = this.players.get(key);
     if (!this.lateRegOpen()) return 'Registration is closed';
+    if (this.sng && this.registered >= this.maxPlayers && !(p && (p.status === 'registered' || p.status === 'playing'))) return 'That one just filled up. Try the next one.';
     if (!p) return null;
     if (p.status === 'registered' || p.status === 'playing') return 'You’re already in';
     if (p.entries > this.reentries) return this.reentries ? 'No re-entries left' : 'This one’s a freezeout: one entry each';
@@ -299,9 +314,12 @@ class Tournament {
     return {
       id: this.id, name: this.name, series: this.series, buyIn: this.buyIn, speed: this.speed, speedName: SPEEDS[this.speed].name,
       stack: this.stack, game: this.game, seatsPerTable: this.seatsPerTable, startsAt: this.startsAt, status: this.status,
-      entries: this.entries, registered: this.registered, left: this.left, prizePool: this.prizePool, guarantee: this.guarantee,
+      entries: this.entries, registered: this.registered, left: this.left, guarantee: this.guarantee,
+      // a Sit & Go only starts full, so show the pool it will have
+      prizePool: this.sng && this.status === 'registering' ? this.maxPlayers * this.buyIn : this.prizePool,
       level: this.level + 1, ...this.blinds(), nextLevelMs: this.nextLevelMs(), lateReg: this.lateRegOpen(), reentries: this.reentries,
       hosted: !!this.hostId, isPrivate: this.isPrivate, levelMin: Math.round(this.levelMs / 60000),
+      sng: this.sng, maxPlayers: this.maxPlayers, tier: this.tier,
       me: me ? { status: me.status, place: me.place, prize: me.prize, table: me.table, entries: me.entries, canEnter: !this.canEnter(me.key) } : null,
     };
   }
@@ -309,7 +327,8 @@ class Tournament {
     const s = this.summary(userId);
     s.isHost = !!userId && userId === this.hostId;
     s.structure = LEVELS.slice(0, Math.max(16, this.level + 6)).map((L, i) => ({ level: i + 1, sb: L[0], bb: L[1], ante: L[2] }));
-    s.payouts = this.payouts;
+    // a Sit & Go shows what it pays once full, even while it's still filling
+    s.payouts = this.sng && this.status === 'registering' ? payouts(this.maxPlayers, this.maxPlayers * this.buyIn, SNG_SPLITS[this.maxPlayers]) : this.payouts;
     s.lateRegLevels = this.lateRegLevels;
     s.standings = this.stacks().slice(0, 100).map((x, i) => ({ rank: i + 1, name: x.name, chips: x.chips, table: x.table, avatar: x.avatar, me: !!(this.players.get(x.key) && userId && this.players.get(x.key).userId === userId) }));
     s.results = this.results.slice().sort((a, b) => a.place - b.place).slice(0, 100).map(r => ({ place: r.place, name: r.name, prize: r.prize }));
@@ -322,4 +341,4 @@ class Tournament {
 const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 const money = c => '$' + (c / 100).toLocaleString('en-US', c % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
 
-module.exports = { Tournament, LEVELS, SPEEDS, payouts, ordinal };
+module.exports = { Tournament, LEVELS, SPEEDS, payouts, ordinal, SNG_SPLITS };

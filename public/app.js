@@ -659,6 +659,7 @@ const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', '
 const chips = n => Number(n || 0).toLocaleString('en-US');
 const whenLocal = ts => { const d = new Date(ts), today = new Date(); const t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); return d.toDateString() === today.toDateString() ? t : `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${t}`; };
 function tourStatus(t) {
+  if (t.sng && t.status === 'registering') return `${t.registered} of ${t.maxPlayers} in · starts when full`;
   if (t.status === 'registering') return t.startsAt ? (t.startsAt - Date.now() < 3600000 ? `Starts in <span data-cd="${t.startsAt}">${clock(t.startsAt - Date.now())}</span>` : `Starts ${whenLocal(t.startsAt)}`) : 'Waiting for the host';
   if (t.status === 'running') return `${t.lateReg ? 'Late reg open · ' : ''}Level ${t.level} · ${t.left} left`;
   if (t.status === 'finished') return 'Finished';
@@ -674,7 +675,7 @@ function tourMine(t) {
   return '';
 }
 function tourRows(list) {
-  const pool = t => t.guarantee && t.prizePool < t.guarantee ? `${money(t.guarantee)} GTD` : `${money(t.prizePool)} pool`;
+  const pool = t => t.sng ? `Top ${t.maxPlayers >= 7 ? 3 : 2} paid` : t.guarantee && t.prizePool < t.guarantee ? `${money(t.guarantee)} GTD` : `${money(t.prizePool)} pool`;
   return `<div class="glist">${list.map(t => `
       <button class="trow2 ${t.status}" data-tour="${t.id}">
         <span class="gr-main"><b>${esc(t.name)}${tourMine(t)}</b><span>${tourStatus(t)}</span><span>${GAME_SHORT(t.game)} · ${t.speedName} · ${t.seatsPerTable}-max${t.reentries ? ' · Re-entry' : ''}</span></span>
@@ -683,15 +684,25 @@ function tourRows(list) {
 }
 function tabTourneys() {
   const all = (S.tourneys || []).filter(t => t.status !== 'canceled');
-  const series = all.filter(t => t.series), hosted = all.filter(t => !t.series);
+  const game = S.sngGame || 'nlh';
+  const sngs = all.filter(t => t.sng && (t.status === 'registering' || t.me) && t.game === game)
+    .sort((a, b) => (a.me ? 0 : 1) - (b.me ? 0 : 1) || a.buyIn - b.buyIn || a.maxPlayers - b.maxPlayers);
+  const series = all.filter(t => t.series), hosted = all.filter(t => !t.series && !t.sng);
   const html = `
     ${largeTitle('Tournaments', '<button class="btn small" id="host-t">Host one</button>')}
     <p class="lead">Register for one and we’ll seat you when it starts. Last one standing takes the top prize.</p>
     ${!S.tourneys ? skelRows(3) : ''}
-    ${series.length ? `<section class="sec first"><div class="sec-head"><h2 class="sec-title">Pokr Championship Series</h2></div>${tourRows(series)}</section>` : ''}
+    <section class="sec first"><div class="sec-head"><div><h2 class="sec-title">Sit & Go</h2><p class="sec-sub">One table. Starts the moment it fills.</p></div></div>
+      <div class="game-seg sng-seg" role="radiogroup" aria-label="Game"><button role="radio" aria-checked="${game === 'nlh'}" data-sg="nlh">Hold’em</button><button role="radio" aria-checked="${game === 'plo'}" data-sg="plo">Omaha</button></div>
+      ${sngs.length ? tourRows(sngs) : '<div class="empty card-empty"><p>Opening new tables…</p></div>'}</section>
+    ${series.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Pokr Championship Series</h2></div>${tourRows(series)}</section>` : ''}
     <section class="sec"><div class="sec-head"><h2 class="sec-title">Hosted by friends</h2></div>
       ${hosted.length ? tourRows(hosted) : '<div class="empty card-empty"><p>No private tournaments right now.</p><p class="sub">Host one, then send your friends the code.</p></div>'}</section>`;
-  return { html, bind: bindTourneysSection };
+  const bind = () => {
+    bindTourneysSection();
+    app.querySelectorAll('[data-sg]').forEach(b => b.onclick = () => { S.sngGame = b.dataset.sg; buzz(4); renderTabs(); });
+  };
+  return { html, bind };
 }
 function bindTourneysSection() {
   app.querySelectorAll('[data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
@@ -709,7 +720,7 @@ function renderTourney(id, refresh) {
   let cta = '';
   if (d.isHost && d.status === 'registering') cta = `<div class="t-host"><button class="btn primary" id="t-start" ${d.registered < 2 ? 'disabled' : ''}>Start now · ${d.registered} in</button><button class="btn" id="t-bots">Add 5 bots</button><button class="btn" id="t-share">Share code ${esc(d.id)}</button></div>`;
   if (me && me.status === 'playing') cta = `<button class="btn primary big" id="t-seat">Take your seat</button>` + cta;
-  else if (me && me.status === 'registered') cta = `<div class="t-in"><span>You’re in. ${d.startsAt ? 'We’ll seat you when it starts.' : 'Waiting for the host to start.'}</span><button class="textbtn" id="t-unreg">Unregister</button></div>` + cta;
+  else if (me && me.status === 'registered') cta = `<div class="t-in"><span>You’re in. ${d.sng ? 'It starts the moment the table fills.' : d.startsAt ? 'We’ll seat you when it starts.' : 'Waiting for the host to start.'}</span><button class="textbtn" id="t-unreg">Unregister</button></div>` + cta;
   else if (me && (me.status === 'busted' || me.status === 'won')) cta = `<div class="t-in done"><span>${me.status === 'won' ? 'You won it' : `You finished ${ordinal(me.place)}`}${me.prize ? ` · ${money(me.prize)}` : ''}</span>${me.canEnter ? `<button class="btn primary" id="t-reg">Re-enter · ${money(d.buyIn)}</button>` : ''}</div>` + cta;
   else if (d.lateReg) cta = `<button class="btn primary big" id="t-reg">${d.status === 'running' ? 'Late register' : 'Register'} · ${d.buyIn ? money(d.buyIn) : 'Free'}</button>` + cta;
   else if (d.status === 'running') cta = `<p class="fine">Registration is closed.</p>` + cta;
