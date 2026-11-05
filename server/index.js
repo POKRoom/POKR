@@ -24,7 +24,6 @@ const { createManager } = require('./tourneys');
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, '..', 'public');
 const store = new Store(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
-store.refundTables();
 
 // blinds in cents: 5¢/10¢ up to $2/$5
 const STAKES = { '5-10': [5, 10], '10-25': [10, 25], '25-50': [25, 50], '50-100': [50, 100], '100-200': [100, 200], '200-500': [200, 500] };
@@ -540,9 +539,27 @@ setInterval(() => {
   }
 }, 30000).unref();
 
-function shutdown() { try { store.saveNow(); } catch (e) { console.error(e); } process.exit(0); }
+function shutdown() {
+  const quit = () => process.exit(0);
+  setTimeout(quit, 8000).unref(); // don't hang forever if the cloud is slow
+  store.flush().catch(e => console.error(e)).finally(quit);
+}
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(PORT, () => console.log(`Pokr is running on http://localhost:${PORT}`));
+// Start: load accounts from the cloud database if one is set up, then open the doors.
+const cloud = require('./cloud').fromEnv();
+(async () => {
+  if (cloud) {
+    try {
+      const n = await store.attachCloud(cloud);
+      console.log(`Cloud save on (${cloud.where}): loaded ${n} account${n === 1 ? '' : 's'}`);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1); // better to fail loudly than to run without anyone's account
+    }
+  } else console.log('Cloud save off: accounts are kept on this server’s disk only');
+  store.refundTables();
+  server.listen(PORT, () => console.log(`Pokr is running on http://localhost:${PORT}`));
+})();
 module.exports = { server, tables, store };

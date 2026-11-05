@@ -3,7 +3,7 @@ services:
   - type: web
     name: pokr
     runtime: node
-    plan: free            # change to "starter" ($7/mo) and uncomment the disk below to keep accounts between restarts
+    plan: free            # accounts are kept in Upstash (below), so the free plan's wiped disk is fine
     buildCommand: "true"  # nothing to build: Pokr has no dependencies
     startCommand: npm start
     healthCheckPath: /healthz
@@ -13,6 +13,12 @@ services:
       # who can change other players' looks and give out specials (comma-separated emails).
       # Set the value in the Render dashboard so it never lives in the code.
       - key: ADMIN_EMAILS
+        sync: false
+      # Free cloud save (Upstash Redis), so accounts survive restarts on the free plan.
+      # Copy both from the database's page on console.upstash.com > "REST API".
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
     # disk:
     #   name: pokr-data

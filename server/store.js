@@ -39,6 +39,55 @@ class Store {
       for (const u of raw.users || []) if (u.email || u.guest) this._index(u); // pre-account profiles without either are dropped
     }
     this.saveTimer = null;
+    this.cloud = null;
+  }
+
+  // Use the cloud database as the source of truth: load everyone from it (or, the first time,
+  // upload what's on disk), then copy changes back to it. Retries a few times before giving up.
+  async attachCloud(cloud) {
+    let users, err;
+    for (let i = 0; i < 4 && !users; i++) {
+      try { users = await cloud.loadUsers(); } catch (e) { err = e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); }
+    }
+    if (!users) throw new Error('Couldn’t reach the cloud database: ' + (err && err.message));
+    this.cloud = cloud;
+    this.pushed = new Map();
+    if (users.length) {
+      this.users.clear(); this.byEmailMap.clear(); this.bySession.clear();
+      for (const u of users) if (u.email || u.guest) { this._index(u); this.pushed.set(u.id, JSON.stringify(u)); }
+    }
+    this.cloudTimer = null; this.cloudBusy = null;
+    await this.pushCloud(); // first run: uploads anyone who was only on disk
+    return users.length;
+  }
+  // Upload the people who changed since the last upload.
+  async pushCloud() {
+    if (!this.cloud) return;
+    if (this.cloudBusy) { this.cloudAgain = true; return this.cloudBusy; }
+    const pairs = [];
+    for (const u of this.users.values()) {
+      const j = JSON.stringify(u);
+      if (this.pushed.get(u.id) !== j) pairs.push([u.id, j]);
+    }
+    if (!pairs.length) return;
+    this.cloudBusy = this.cloud.saveUsers(pairs)
+      .then(() => { for (const [id, j] of pairs) this.pushed.set(id, j); })
+      .catch(e => console.error('cloud save failed, will retry:', e.message))
+      .finally(() => { this.cloudBusy = null; if (this.cloudAgain) { this.cloudAgain = false; this.scheduleCloud(); } });
+    return this.cloudBusy;
+  }
+  // At most one upload every few seconds keeps well inside the free plan's monthly commands.
+  scheduleCloud() {
+    if (!this.cloud || this.cloudTimer) return;
+    this.cloudTimer = setTimeout(() => { this.cloudTimer = null; this.pushCloud(); }, Number(process.env.CLOUD_SAVE_MS) || 15000);
+    if (this.cloudTimer.unref) this.cloudTimer.unref();
+  }
+  // Before the server stops: write everything out.
+  async flush() {
+    if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
+    this.saveNow();
+    if (this.cloudTimer) { clearTimeout(this.cloudTimer); this.cloudTimer = null; }
+    if (this.cloud) { await this.cloudBusy; await this.pushCloud(); }
   }
 
   _index(u) {
@@ -152,6 +201,7 @@ class Store {
   ledger(u, type, amount, ref) {
     const line = JSON.stringify({ ts: new Date().toISOString(), user: u.id, type, amount, bankroll: u.bankroll, ref });
     fs.appendFile(this.ledgerFile, line + '\n', () => {});
+    if (this.cloud) this.cloud.appendLedger(line).catch(e => console.error('cloud ledger failed:', e.message));
   }
 
   // After a restart, money that was sitting at tables goes back to its owners.
@@ -183,6 +233,7 @@ class Store {
     const tmp = this.file + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify({ version: 2, users: [...this.users.values()] }));
     fs.renameSync(tmp, this.file);
+    this.scheduleCloud();
   }
 }
 
