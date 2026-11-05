@@ -2264,3 +2264,8 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .sp2.sp-gold .sp-plate { background: linear-gradient(180deg, #2A210C, #15110A); }
 .look-plate.vip { border-color: #E2B33C; box-shadow: 0 0 16px rgba(226, 179, 60, .35); }
 .look-plate.vip span { background: linear-gradient(180deg, #3A2E12, #221A08); color: #FCE7A8; }
+/* VIP star */
+.vipstar { display: inline-block; margin-left: 3px; color: #F3C969; font-size: .95em; line-height: 1; text-shadow: 0 0 6px rgba(243, 201, 105, .55); vertical-align: 0; }
+.sp2 .sp-plate .nm .vipstar { font-size: 11px; margin-left: 2px; }
+.vipsw .lr-txt b { display: inline-flex; align-items: center; gap: 4px; }
+.look-plate span.vipstar { display: inline; padding: 0; border: 0; background: none; margin-left: 4px; color: #F3C969; }

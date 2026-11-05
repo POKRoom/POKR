@@ -29,24 +29,25 @@
     const now = Date.now();
     const sum = ms => { const r = { net: 0, hands: 0, won: 0, biggestPot: 0 }; for (const h of u.hist || []) if (now - h.ts < ms) { r.net += h.d; r.hands++; if (h.w > 0 && h.d > 0) r.won++; r.biggestPot = Math.max(r.biggestPot, h.w); } return r; };
     const periods = { day: sum(864e5), week: sum(7 * 864e5), month: sum(30 * 864e5), all: { ...u.stats } };
-    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, specials: u.specials || [], admin: true, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+    return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods, vip: !!u.vip, specials: u.specials || [], admin: true, canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
   };
   // Preview: you're the admin, and the bots are the other players you can restyle.
   const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
   const startLook = av => { const ch = looks.cleanLook(av && av.ch); return ch && !ch.sp && !looks.wearError({}, ch, false) ? ch : looks.randomLook(); };
   function dressBots(t) {
     const L = db.botLooks || {};
-    for (const s of t.seats) if (s && s.kind === 'bot' && L[s.name]) s.avatar = withLook(L[s.name]);
+    const V = db.botVip || {};
+    for (const s of t.seats) if (s && s.kind === 'bot' && (L[s.name] || V[s.name])) s.avatar = { ...(L[s.name] ? withLook(L[s.name]) : s.avatar), vip: V[s.name] ? 1 : 0 };
   }
   function adminList(q) {
     q = String(q || '').toLowerCase();
     const rows = [];
-    if (db.user) rows.push({ id: 'me', name: db.user.name, avatar: db.user.avatar, email: db.user.email || null, guest: !!db.user.guest, hands: db.user.stats.hands, specials: db.user.specials || [] });
+    if (db.user) rows.push({ id: 'me', name: db.user.name, avatar: db.user.avatar, email: db.user.email || null, guest: !!db.user.guest, hands: db.user.stats.hands, specials: db.user.specials || [], vip: !!db.user.vip });
     const seen = new Set(Object.keys(db.bots));
     for (const t of tables.values()) for (const st of t.seats) if (st && st.kind === 'bot') seen.add(st.name);
     for (const name of seen) {
       const ch = (db.botLooks || {})[name];
-      rows.push({ id: 'bot:' + name, name, avatar: ch ? withLook(ch) : { a: -1, c: (db.bots[name] || {}).c || 0 }, email: null, guest: true, bot: true, hands: (db.bots[name] || {}).hands || 0, specials: (db.botSpecials || {})[name] || [] });
+      rows.push({ id: 'bot:' + name, name, avatar: { ...(ch ? withLook(ch) : { a: -1, c: (db.bots[name] || {}).c || 0 }), vip: (db.botVip || {})[name] ? 1 : 0 }, email: null, guest: true, bot: true, hands: (db.bots[name] || {}).hands || 0, specials: (db.botSpecials || {})[name] || [], vip: !!(db.botVip || {})[name] });
     }
     return rows.filter(r => !q || r.name.toLowerCase().includes(q));
   }
@@ -226,7 +227,8 @@
         if (!shop.canUseAvatar(db.user, m.avatar && m.avatar.a)) return out({ t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
         avatar = m.avatar;
       }
-      db.user.name = name; db.user.avatar = avatar;
+      db.user.name = name; db.user.avatar = { ...avatar, vip: db.user.vip ? 1 : 0 };
+      avatar = db.user.avatar;
       for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].name = name; t.seats[i].avatar = avatar; hooks.onChange(t); } }
       persist();
       sendMe();
@@ -238,7 +240,7 @@
       const id = String(m.userId || '');
       if (id === 'me') {
         if (ch.sp && !(db.user.specials || []).includes(ch.sp)) db.user.specials = [...(db.user.specials || []), ch.sp];
-        db.user.avatar = withLook(ch);
+        db.user.avatar = { ...withLook(ch), vip: db.user.vip ? 1 : 0 };
         for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
         sendMe();
       } else if (id.startsWith('bot:')) {
@@ -249,6 +251,19 @@
       }
       persist();
       out({ t: 'notice', message: 'Look saved' });
+      out({ t: 'adminUsers', list: adminList(m.q) });
+    },
+    adminVip(c, m) {
+      const id = String(m.userId || '');
+      if (id === 'me') {
+        db.user.vip = !!m.on; db.user.avatar = { ...db.user.avatar, vip: db.user.vip ? 1 : 0 };
+        for (const t of tables.values()) { const i = t.seatOf(db.user.id); if (i >= 0) { t.seats[i].avatar = db.user.avatar; hooks.onChange(t); } }
+        sendMe();
+      } else if (id.startsWith('bot:')) {
+        db.botVip = db.botVip || {}; db.botVip[id.slice(4)] = !!m.on;
+        for (const t of tables.values()) hooks.onChange(t);
+      }
+      persist();
       out({ t: 'adminUsers', list: adminList(m.q) });
     },
     adminGrant(c, m) {

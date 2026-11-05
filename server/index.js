@@ -17,6 +17,8 @@ const isAdmin = u => !!(u && u.email && ADMINS.includes(u.email));
 // A character to save: the one they sent if it's valid and free, otherwise a random one.
 const startLook = av => { const ch = looks.cleanLook(av && av.ch); return ch && !ch.sp && !looks.wearError({}, ch, false) ? ch : looks.randomLook(); };
 const withLook = ch => ({ a: 0, c: ch.jk % 8, ch });
+// The VIP star rides on the avatar so it shows wherever the player does: seats, chat, leaderboard.
+const stamp = (u, avatar) => ({ ...avatar, vip: u.vip ? 1 : 0 });
 const { createManager } = require('./tourneys');
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -53,7 +55,7 @@ const server = http.createServer((req, res) => {
 const send = (c, msg) => c.ws.send(msg);
 function meOf(u) {
   const atTables = Object.values(u.atTables || {}).reduce((a, b) => a + b, 0);
-  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, specials: u.specials || [], admin: isAdmin(u), canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
+  return { atTablesBy: { ...(u.atTables || {}) }, id: u.id, email: u.email, guest: !!u.guest, name: u.name, avatar: u.avatar, bankroll: u.bankroll, atTables, stats: u.stats, periods: store.periods(u), verification: u.verification, vip: !!u.vip, specials: u.specials || [], admin: isAdmin(u), canRefill: u.bankroll + atTables < REFILL_BELOW, ...shop.publicEconomy(u) };
 }
 function sendMe(userId) {
   const u = store.byId(userId);
@@ -267,7 +269,7 @@ const handlers = {
       avatar = { a: m.avatar.a, c: m.avatar.c, ...(u.avatar && u.avatar.ch ? { ch: u.avatar.ch } : {}) };
       if (!shop.canUseAvatar(u, avatar.a)) return send(c, { t: 'error', message: 'That avatar comes with Pro Pass or the shop' });
     }
-    u.name = name; u.avatar = avatar;
+    u.name = name; u.avatar = stamp(u, avatar);
     store.save();
     restyleSeats(u);
     sendMe(u.id);
@@ -279,7 +281,7 @@ const handlers = {
     const q = cleanText(m.q || '', 40).toLowerCase();
     const list = store.all().filter(u => !q || String(u.name).toLowerCase().includes(q) || String(u.email || '').includes(q))
       .sort((a, b) => (b.stats.hands || 0) - (a.stats.hands || 0)).slice(0, 60)
-      .map(u => ({ id: u.id, name: u.name, avatar: u.avatar, email: u.email || null, guest: !!u.guest, hands: u.stats.hands || 0, specials: u.specials || [] }));
+      .map(u => ({ id: u.id, name: u.name, avatar: u.avatar, email: u.email || null, guest: !!u.guest, hands: u.stats.hands || 0, specials: u.specials || [], vip: !!u.vip }));
     send(c, { t: 'adminUsers', list });
   },
   adminLook(c, m) {
@@ -290,9 +292,20 @@ const handlers = {
     if (!u || !ch) return send(c, { t: 'error', message: 'Couldn’t save that look' });
     // an admin can dress anyone in anything; a special they put on someone is also given to them
     if (ch.sp && !(u.specials || []).includes(ch.sp)) u.specials = [...(u.specials || []), ch.sp];
-    u.avatar = withLook(ch);
+    u.avatar = stamp(u, withLook(ch));
     store.save(); restyleSeats(u); sendMe(u.id);
     if (u.id !== me.id) notifyUser(u.id, { t: 'notice', message: `${me.name} changed your look` });
+    handlers.adminUsers(c, { q: m.q });
+  },
+  adminVip(c, m) {
+    const me = store.byId(c.userId);
+    if (!isAdmin(me)) return send(c, { t: 'error', message: 'Admins only' });
+    const u = store.byId(String(m.userId || ''));
+    if (!u) return send(c, { t: 'error', message: 'Couldn’t find that player' });
+    u.vip = !!m.on;
+    u.avatar = stamp(u, u.avatar || { a: 0, c: 0 });
+    store.save(); restyleSeats(u); sendMe(u.id);
+    if (u.vip && u.id !== me.id) notifyUser(u.id, { t: 'notice', message: `${me.name} gave you a VIP star` });
     handlers.adminUsers(c, { q: m.q });
   },
   adminGrant(c, m) {
@@ -304,7 +317,7 @@ const handlers = {
     const has = new Set(u.specials || []);
     if (m.on) has.add(sp); else has.delete(sp);
     u.specials = [...has];
-    if (!m.on && u.avatar && u.avatar.ch && u.avatar.ch.sp === sp) { u.avatar = withLook({ ...u.avatar.ch, sp: '' }); restyleSeats(u); }
+    if (!m.on && u.avatar && u.avatar.ch && u.avatar.ch.sp === sp) { u.avatar = stamp(u, withLook({ ...u.avatar.ch, sp: '' })); restyleSeats(u); }
     store.save(); sendMe(u.id);
     const nm = (looks.SPECIALS.find(x => x.id === sp) || {}).name;
     if (m.on && u.id !== me.id) notifyUser(u.id, { t: 'notice', message: `${me.name} gave you ${nm}. Wear it from Name & avatar.` });

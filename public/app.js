@@ -160,6 +160,7 @@ const SPECIALS = [
   { id: 'flame', name: 'Hot Streak', blurb: 'On fire, literally' },
   { id: 'astro', name: 'Moonshot', blurb: 'A helmet for the long shot' },
   { id: 'gold', name: 'Gold Plate', blurb: 'All gold, name plate included' },
+  { id: 'princess', name: 'Princess', blurb: 'A tiara, long hair and a pink gown' },
 ];
 function hashStr(s) { let h = 2166136261; for (const ch of String(s || '?')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 // The character someone has picked, or (for bots and old profiles) one chosen from their name.
@@ -169,6 +170,8 @@ function lookOf(av, name) {
   return { lk: (h >>> 15) % 8, sk: (h >>> 3) % SKIN.length, hr: (h >>> 7) % HAIR.length, jk: ((av && av.c) || 0) % 8, sh: ((h >>> 19) % 5) === 0 ? 1 : 0, bd: ((h >>> 22) % 4) === 0 ? 1 : 0, sp: '' };
 }
 const specialOf = av => (av && av.ch && av.ch.sp) || '';
+// A gold star after the name for anyone made VIP.
+const vipStar = av => (av && av.vip ? '<span class="vipstar" role="img" aria-label="VIP">★</span>' : '');
 function portrait(av, name, cls = '') { return drawLook(lookOf(av, name), cls); }
 function drawLook(ch, cls = '') {
   const seed = ch.jk * 7 + ch.hr * 3 + ch.sk + ch.lk * 11;
@@ -176,13 +179,14 @@ function drawLook(ch, cls = '') {
   const sp = ch.sp || '';
   const skin = SKIN[ch.sk] || SKIN[0], hair = HAIR[ch.hr] || HAIR[0];
   let jk = JACKET[ch.jk] || JACKET[0];
-  if (sp === 'crown') jk = '#5B2A86'; else if (sp === 'diamond' || sp === 'astro') jk = '#EDEFF3'; else if (sp === 'flame') jk = '#B3261E'; else if (sp === 'gold') jk = '#C9A04A'; else if (sp === 'shark') jk = '#5E6B78';
+  if (sp === 'crown') jk = '#5B2A86'; else if (sp === 'diamond' || sp === 'astro') jk = '#EDEFF3'; else if (sp === 'flame') jk = '#B3261E'; else if (sp === 'gold') jk = '#C9A04A'; else if (sp === 'shark') jk = '#5E6B78'; else if (sp === 'princess') jk = '#E26D9A';
   const look = ch.lk, shades = ch.sh || sp === 'diamond', beard = ch.bd && look !== 3 && sp !== 'astro';
   const dark = 'rgba(0,0,0,.22)';
   let body = `<path d="M5 64c1.5-13 11.5-20.5 27-20.5S57.5 51 59 64Z" fill="${jk}"/><path d="M32 43.5c-9 0-16 2.6-20.5 7.6L15 64h17Z" fill="${dark}"/><path d="M24.5 44.5 32 53l7.5-8.5c-2-.7-4.7-1-7.5-1s-5.5.3-7.5 1Z" fill="#ECE8E1"/><path d="M27 44.2 32 53l5-8.8" fill="none" stroke="${dark}" stroke-width="1.2"/>`;
   if (sp === 'crown') body += `<path d="M10 54c6-6 14-8.5 22-8.5S48 48 54 54" stroke="#F4F1EA" stroke-width="4" fill="none"/><circle cx="18" cy="51" r="1" fill="#222"/><circle cx="46" cy="51" r="1" fill="#222"/><path d="M8 60c7-7 15-9.5 24-9.5S49 53 56 60" stroke="#E2B33C" stroke-width="1.4" fill="none"/>`;
   if (sp === 'diamond') body += `<path d="M22 46c2 7 6 10 10 10s8-3 10-10" stroke="#E2B33C" stroke-width="2" fill="none" stroke-dasharray="2 1.2"/><path d="M32 55.5l2.4 3-2.4 3-2.4-3Z" fill="#9FE6FF" stroke="#fff" stroke-width=".6"/>`;
   if (sp === 'gold') body += `<path d="M24 50h16" stroke="#8A6A1E" stroke-width="1"/><circle cx="32" cy="57" r="2.4" fill="#F4D77A" stroke="#8A6A1E" stroke-width=".8"/>`;
+  if (sp === 'princess') body += `<path d="M18 47.5c4 3 9 4.6 14 4.6s10-1.6 14-4.6" stroke="#F7B6CF" stroke-width="2.4" fill="none"/><circle cx="24" cy="57" r="1.1" fill="#FFE3EE"/><circle cx="32" cy="59" r="1.1" fill="#FFE3EE"/><circle cx="40" cy="57" r="1.1" fill="#FFE3EE"/><path d="M27.5 48.5 32 52l4.5-3.5" fill="none" stroke="#E2B33C" stroke-width="1.2"/><circle cx="32" cy="53.4" r="1.6" fill="#9FE6FF" stroke="#fff" stroke-width=".5"/>`;
   if (sp === 'astro') body += `<rect x="25" y="52" width="14" height="8" rx="2" fill="#C8CDD6"/><circle cx="29" cy="56" r="1.4" fill="#E0544B"/><circle cx="34" cy="56" r="1.4" fill="#3FB28C"/>`;
   const neck = `<rect x="27" y="35" width="10" height="11" rx="4" fill="${skin}"/><rect x="27" y="35" width="10" height="5" fill="${dark}"/>`;
   const head = `<ellipse cx="32" cy="27" rx="12.5" ry="13.5" fill="${skin}"/><path d="M38 14.6c4.4 2.2 6.5 6.7 6.5 12.4S42.4 37.2 38 39.4c2.6-3 3.6-7.4 3.6-12.4S40.6 17.6 38 14.6Z" fill="${dark}"/><ellipse cx="19.6" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/><ellipse cx="44.4" cy="28.5" rx="1.8" ry="2.8" fill="${skin}"/>`;
@@ -214,12 +218,16 @@ function drawLook(ch, cls = '') {
     back = `<path d="M11 44c-4-21 6-34 21-34s25 13 21 34c-5 3-12 4.4-21 4.4S16 47 11 44Z" fill="#6E7B88"/><path d="M28 11.4 35 1l3.4 12Z" fill="#5E6B78"/><path d="M11 44c-4-21 6-34 21-34 -10 3-16 16-14 36Z" fill="${dark}"/>`;
     front = `<path d="M19.6 20.4c4-3.4 8-4.6 12.4-4.6s8.4 1.2 12.4 4.6" stroke="#6E7B88" stroke-width="4" fill="none"/><path d="M20.6 19.6l2.2 3.2 2.2-3.8 2.2 3.4 2.4-3.8 2.4 3.6 2.4-3.6 2.4 3.8 2.2-3.4 2.2 3.8 2.2-3.2" fill="#fff" stroke="#fff" stroke-width=".6" stroke-linejoin="round"/>`;
   }
+  if (sp === 'princess') {
+    back = `<path d="M17.6 31c-1.4-13.6 5-20.4 14.4-20.4S47.8 17.4 46.4 31l2 15H15.6Z" fill="${hair}"/><path d="M17.6 31c-1.4-13.6 5-20.4 14.4-20.4 -7 1.6-11.6 8-11 19l-1 17h-4.4Z" fill="${dark}"/>`;
+    top = `<path d="M19.4 26c0-9.6 5.6-14.6 12.6-14.6S44.6 16.4 44.6 26c-2.6-4.8-7.4-7.6-12.6-7.6S22 21.2 19.4 26Z" fill="${hair}"/><path d="M22.4 15.4 25 9.6l3 4 4-6.8 4 6.8 3-4 2.6 5.8c-2.8 1.2-6 1.8-9.6 1.8s-6.8-.6-9.6-1.8Z" fill="#E8EAF0" stroke="#A9AEB8" stroke-width=".6"/><circle cx="32" cy="10" r="1.7" fill="#F06AA0"/><circle cx="25.2" cy="11.6" r=".9" fill="#9FE6FF"/><circle cx="38.8" cy="11.6" r=".9" fill="#9FE6FF"/><circle cx="19.8" cy="32.6" r="1.1" fill="#F7E7A0"/><circle cx="44.2" cy="32.6" r="1.1" fill="#F7E7A0"/>`;
+  }
   if (sp === 'flame') top = `<path d="M18.6 26c-2-9 1-13 3.4-15.6.2 3 1.4 4.8 3 5.6-.4-5 1.6-9.6 5.4-12 0 3.6 1.4 6 3.6 7 0-3 1.2-5.6 3.4-7 .6 3.4 2.4 5 4 6.4 1.6-1.6 2.4-3.6 2.4-5.8 2.6 3.6 4.4 9.6 2.6 15.4-2.6-4-7-6-12.4-6s-9.8 2-15.4 6Z" fill="#F08A24"/><path d="M23 22c.4-4 2-6.6 4-8 .2 2.2 1 3.6 2.4 4.2.2-3 1.6-5.6 3.6-7 .2 2.6 1.4 4.6 3.4 5.6.8-1.4 1.2-2.8 1.2-4.4 2.2 2.4 3.4 6 2.4 9.6-2.8-1.6-6-2.4-9-2.4s-5.2.6-8 2.4Z" fill="#FFD34A"/>`;
   if (sp === 'astro') {
     back = `<circle cx="32" cy="28" r="20" fill="#E9ECF1"/><circle cx="32" cy="28" r="20" fill="none" stroke="#B8BEC8" stroke-width="1.6"/>`;
     front = `<path d="M17.4 27.6a14.6 14.8 0 0 1 29.2 0c0 3-1 5-2.4 6.4H19.8c-1.4-1.4-2.4-3.4-2.4-6.4Z" fill="#7FB2FF" opacity=".22"/><path d="M21 21c2-3 5-4.6 8.4-5" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><rect x="45" y="22" width="4" height="9" rx="2" fill="#C8CDD6"/>`;
   }
-  if (sp === 'shark' || sp === 'astro') faceOverride = '';
+  if (sp === 'shark' || sp === 'astro' || sp === 'princess') faceOverride = '';
   const faceBits = faceOverride || `${face}${mouth}${beardP}`;
   const hairTop = sp === 'astro' ? shortHair : sp === 'shark' ? '' : top;
   return `<svg class="por ${cls}" viewBox="9 3 46 61" aria-hidden="true">${back}${body}${neck}${head}${faceBits}${hairTop}${front}</svg>`;
@@ -509,7 +517,7 @@ function renderLookEditor(opt) {
   app.innerHTML = `<div class="page lookpage">
     ${pageBar(self ? 'Your character' : esc(target.name))}
     <section class="look-hero"><div class="look-stage" id="lk-prev">${drawLook(D)}</div>
-      <div class="look-plate ${D.sp ? 'vip' : ''}" id="lk-plate"><span>${esc(name)}</span><b>${self ? money(S.me.bankroll) : `${count(target.hands || 0)} hands`}</b></div>
+      <div class="look-plate ${D.sp ? 'vip' : ''}" id="lk-plate"><span>${esc(name)}${(self ? S.me.vip : target.vip) ? '<span class="vipstar" role="img" aria-label="VIP">★</span>' : ''}</span><b>${self ? money(S.me.bankroll) : `${count(target.hands || 0)} hands`}</b></div>
       <button type="button" class="btn small" id="lk-shuffle">Shuffle</button></section>
     ${self ? `<div class="field"><label class="lbl" for="pf-name">Name at the table</label><input id="pf-name" maxlength="16" autocomplete="nickname" value="${esc(S.me.name)}"></div>` : `<p class="lead">${target.bot ? 'A bot at your tables.' : target.email ? esc(target.email) : 'Guest player'} You can change any part of their look, and give them a special.</p>`}
     ${specials ? `<section class="sec first"><div class="sec-head"><div><h2 class="sec-title">Specials</h2><p class="sec-sub">${self ? 'Given to you. Nobody can buy these.' : 'One of a kind. Give one and it’s theirs to wear.'}</p></div></div>
@@ -518,6 +526,7 @@ function renderLookEditor(opt) {
     <section class="sec first"><div class="sec-head"><h2 class="sec-title">Skin</h2></div><div class="swatches">${SKIN.map((c, i) => swatch('sk', i, c, false, 'Skin tone ' + (i + 1))).join('')}</div></section>
     <section class="sec first"><div class="sec-head"><h2 class="sec-title">Hair</h2></div><div class="swatches">${HAIR.map((c, i) => swatch('hr', i, c, false, 'Hair colour ' + (i + 1))).join('')}</div></section>
     <section class="sec first"><div class="sec-head"><h2 class="sec-title">Jacket</h2></div><div class="swatches">${JACKET.map((c, i) => swatch('jk', i, c, lockedJk(i), 'Jacket ' + (i + 1))).join('')}</div></section>
+    ${self ? '' : `<div class="list togs"><label class="lrowbtn static switch vipsw"><div class="lr-txt"><b>VIP star <span class="vipstar" aria-hidden="true">★</span></b><span>A gold star after their name, everywhere</span></div><input type="checkbox" id="lk-vip" ${target.vip ? 'checked' : ''}></label></div>`}
     <div class="list togs">
       <label class="lrowbtn static switch"><div class="lr-txt"><b>Sunglasses</b></div><input type="checkbox" id="lk-sh" ${D.sh ? 'checked' : ''}></label>
       <label class="lrowbtn static switch"><div class="lr-txt"><b>Beard</b></div><input type="checkbox" id="lk-bd" ${D.bd ? 'checked' : ''}></label>
@@ -543,6 +552,13 @@ function renderLookEditor(opt) {
   });
   $('#lk-sh').onchange = e => { D.sh = e.target.checked ? 1 : 0; redraw(); };
   $('#lk-bd').onchange = e => { D.bd = e.target.checked ? 1 : 0; redraw(); };
+  const vipEl = $('#lk-vip');
+  if (vipEl) vipEl.onchange = e => {
+    target.vip = e.target.checked;
+    send({ t: 'adminVip', userId: target.id, on: target.vip, q: S.adminQ || '' });
+    $('#lk-plate span').innerHTML = esc(name) + (target.vip ? '<span class="vipstar" role="img" aria-label="VIP">★</span>' : '');
+    toast(target.vip ? `${target.name} is VIP` : 'VIP star removed'); buzz(6);
+  };
   const nosp = $('#lk-nosp'); if (nosp) nosp.onclick = () => { D.sp = ''; redraw(); nosp.remove(); };
   $('#lk-shuffle').onclick = () => {
     const r = n => Math.floor(Math.random() * n);
@@ -583,7 +599,7 @@ function renderAdmin() {
     <p class="fine left">Only admins see this. Changes show up at the table right away.</p>
     ${!list ? skelRows(4) : list.length ? `<div class="glist">${list.map(u => `
       <button class="grow prow" data-uid="${esc(u.id)}"><span class="pmini ${specialOf(u.avatar) ? 'vip' : ''}">${portrait(u.avatar, u.name)}</span>
-        <span class="gr-main"><b>${esc(u.name)}</b><span>${u.bot ? 'Bot' : u.email ? esc(u.email) : 'Guest'} · ${count(u.hands)} hands</span></span>
+        <span class="gr-main"><b>${esc(u.name)}${u.vip ? '<span class="vipstar" role="img" aria-label="VIP">★</span>' : ''}</b><span>${u.bot ? 'Bot' : u.email ? esc(u.email) : 'Guest'} · ${count(u.hands)} hands</span></span>
         ${u.specials && u.specials.length ? `<span class="gr-side spc">${u.specials.length} special${u.specials.length > 1 ? 's' : ''}</span>` : ''}${TICON.chev}</button>`).join('')}</div>`
       : '<div class="empty card-empty"><p>No one matches that.</p></div>'}
   </div>`;
@@ -701,8 +717,8 @@ function renderTourney(id, refresh) {
   const tabs = [['players', d.status === 'registering' ? `Players (${d.registered})` : 'Players'], ['payouts', 'Payouts'], ['structure', 'Structure'], ['tables', 'Tables']];
   let body = '';
   if (tab === 'players') {
-    if (d.status === 'registering') body = d.field.length ? `<div class="tlist">${d.field.map(p => `<div class="trow">${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}</span></div>`).join('')}</div>` : '<p class="wait">Nobody’s registered yet.</p>';
-    else body = `<div class="tlist">${d.standings.map(p => `<div class="trow ${p.me ? 'me' : ''}"><span class="tr-rk">${p.rank}</span>${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}</span><span class="tc">${chips(p.chips)}</span><span class="tt">T${p.table}</span></div>`).join('')}
+    if (d.status === 'registering') body = d.field.length ? `<div class="tlist">${d.field.map(p => `<div class="trow">${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}${vipStar(p.avatar)}</span></div>`).join('')}</div>` : '<p class="wait">Nobody’s registered yet.</p>';
+    else body = `<div class="tlist">${d.standings.map(p => `<div class="trow ${p.me ? 'me' : ''}"><span class="tr-rk">${p.rank}</span>${chipAvatar(p.avatar, p.name)}<span class="tn">${esc(p.name)}${vipStar(p.avatar)}</span><span class="tc">${chips(p.chips)}</span><span class="tt">T${p.table}</span></div>`).join('')}
       ${d.results.length ? `<h3 class="tsub">Finished</h3>${d.results.map(r => `<div class="trow out"><span class="tr-rk">${ordinal(r.place)}</span><span class="tn">${esc(r.name)}</span><span class="tc">${r.prize ? money(r.prize) : ''}</span></div>`).join('')}` : ''}</div>`;
   } else if (tab === 'payouts') {
     body = d.payouts.length ? `<p class="wait">${d.payouts.length} paid of ${d.entries} entries${d.status !== 'finished' && d.lateReg ? ' so far' : ''}.</p><div class="tlist">${d.payouts.map(x => `<div class="trow"><span class="tr-rk">${ordinal(x.place)}</span><span class="tn"></span><span class="tc gold">${money(x.amount)}</span></div>`).join('')}</div>` : '<p class="wait">Payouts appear once there are at least two entries.</p>';
@@ -1005,7 +1021,7 @@ function tabSocial() {
     ${board ? `<section class="panel">
       <div class="sec-head"><h2>High Rollers</h2><span class="lbl">All time</span></div>
       ${!S.lobby ? skelRows(4) : L.leaderboard.length ? `<div class="rows">${L.leaderboard.map((p, i) => `
-        <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar, p.name)}<span class="nm">${esc(p.name)}</span>
+        <div class="lrow ${i === 0 ? 'first' : ''} ${p.id === me.id ? 'me' : ''}"><span class="rk">${i + 1}</span>${avatarHTML(p.avatar, p.name)}<span class="nm">${esc(p.name)}${vipStar(p.avatar)}</span>
         <span class="num ${p.net > 0 ? 'up' : p.net < 0 ? 'down' : ''}">${signedMoney(p.net)}</span><span class="h">${count(p.hands)} hands</span></div>`).join('')}</div>`
         : '<div class="empty"><p>Nobody’s on the board yet.</p><p class="sub">Play a hand to claim the top spot.</p></div>'}
     </section>` : `
@@ -1055,7 +1071,7 @@ function tabMe() {
     ${largeTitle('Profile')}
     <section class="profile-card">
       ${avatarHTML(me.avatar, me.name)}
-      <div class="pc-txt"><b>${esc(me.name)}</b><span>${me.guest ? 'Playing as a guest' : esc(me.email || '')}</span></div>
+      <div class="pc-txt"><b>${esc(me.name)}${me.vip ? '<span class="vipstar" role="img" aria-label="VIP">★</span>' : ''}</b><span>${me.guest ? 'Playing as a guest' : esc(me.email || '')}</span></div>
       <button class="btn small" id="p-edit">Edit</button>
     </section>
     <section class="panel">
@@ -1422,7 +1438,7 @@ function renderFeed() {
   if (S.sideTab === 'chat') {
     feed.innerHTML = S.chat.length ? S.chat.map(m => m.sys
       ? `<div class="msg sys">${esc(m.text)}</div>`
-      : `<div class="msg">${avatarHTML(m.avatar, m.name)}<div class="body"><span class="who">${esc(m.name)}</span><span>${esc(m.text)}</span></div></div>`).join('')
+      : `<div class="msg">${avatarHTML(m.avatar, m.name)}<div class="body"><span class="who">${esc(m.name)}${vipStar(m.avatar)}</span><span>${esc(m.text)}</span></div></div>`).join('')
       : '<div class="empty"><p>It’s quiet in here.</p><p class="sub">Say hi, or send a reaction.</p></div>';
   } else {
     const log = S.table ? S.table.log : [];
@@ -1581,7 +1597,7 @@ function renderStage() {
       <div class="sp2 ${side} ${specialOf(s.avatar) ? 'vip sp-' + specialOf(s.avatar) : ''}">
         ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
         <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
-        <div class="sp-plate"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
+        <div class="sp-plate"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
         ${under ? `<span class="sp-under ${utone}">${under}</span>` : ''}
         ${fan ? `<div class="sp-fan n${s.cards.length} ${shown ? 'up' : ''} ${isMe ? 'myc' : ''}">${fan}</div>` : ''}
       </div>

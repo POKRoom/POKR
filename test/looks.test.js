@@ -96,6 +96,18 @@ function client() {
   assert.strictEqual(amy.me.avatar.ch.sp, '');
   assert.deepStrictEqual(amy.me.specials, ['crown']);
 
+  // VIP star: only an admin can give it, and it rides on the avatar
+  amy.send({ t: 'adminVip', userId: amy.me.id, on: true });
+  await wait(200);
+  assert.ok(!amy.me.vip, 'amy can’t make herself VIP');
+  boss.send({ t: 'adminVip', userId: amy.me.id, on: true });
+  await wait(200);
+  assert.ok(amy.me.vip && amy.me.avatar.vip === 1, 'boss made amy VIP');
+  assert.ok(amy.notices.some(n => /VIP star/.test(n)));
+  amy.send({ t: 'profile', name: 'Amy', avatar: { a: 0, c: 0, ch: { lk: 2, sk: 2, hr: 3, jk: 2, sp: 'crown' } } });
+  await wait(200);
+  assert.strictEqual(amy.me.avatar.vip, 1, 'star stays when she changes her look');
+
   // restart the server: the account, the character and the specials are all still there
   const token = amy.token;
   srv.kill(); await wait(500);
@@ -104,8 +116,9 @@ function client() {
   again.send({ t: 'hello', token });
   await wait(300);
   assert.ok(again.me, 'still logged in after a restart');
-  assert.strictEqual(again.me.avatar.ch.lk, 8);
+  assert.strictEqual(again.me.avatar.ch.lk, 2);
   assert.deepStrictEqual(again.me.specials, ['crown']);
+  assert.ok(again.me.vip, 'VIP survives a restart');
   const relog = await client();
   relog.send({ t: 'login', email: 'amy@example.com', password: 'password123' });
   await wait(300);

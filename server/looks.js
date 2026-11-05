@@ -20,6 +20,7 @@ const SPECIALS = [
   { id: 'flame', name: 'Hot Streak' },
   { id: 'astro', name: 'Moonshot' },
   { id: 'gold', name: 'Gold Plate' },
+  { id: 'princess', name: 'Princess' },
 ];
 const SPECIAL_IDS = SPECIALS.map(s => s.id);
 
