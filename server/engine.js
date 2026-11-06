@@ -267,6 +267,7 @@ class Table {
     const n = this.seats.filter(dealt).length;
     const sbI = n === 2 ? this.dealer : this.nextIdx(this.dealer, dealt);
     const bbI = this.nextIdx(sbI, dealt);
+    this.sbSeat = sbI; this.bbSeat = bbI; // shown at the table: the blinds move round with the button
     this._log(`Hand #${this.handNo}`);
     // Big blind ante: the big blind posts one ante for the whole table, as dead money, before the blind.
     if (this.ante > 0) {
@@ -524,7 +525,7 @@ class Table {
     return {
       code: this.code, name: this.name, sb: this.sb, bb: this.bb, isPrivate: this.isPrivate, game: this.game,
       isHost: this.hostId === userId, phase: this.phase, handNo: this.handNo, street: this.street,
-      board: this.board, pot, currentBet: this.currentBet, dealer: this.dealer, toAct: this.toAct,
+      board: this.board, pot, currentBet: this.currentBet, dealer: this.dealer, sbSeat: this.sbSeat ?? -1, bbSeat: this.bbSeat ?? -1, toAct: this.toAct,
       turnMs: this.turnDeadline ? Math.max(0, this.turnDeadline - now) : 0, turnTotal: this.timing.turn,
       nextHandMs: this.nextHandAt ? Math.max(0, this.nextHandAt - now) : 0,
       seats, you: me, myHand, net, actions, result: this.result, log: this.log.slice(-40),

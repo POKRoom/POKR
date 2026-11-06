@@ -315,7 +315,7 @@ function onMessage(m) {
     case 'catalog': S.catalog = m.catalog; break;
     case 'notice': toast(m.message); break;
     case 'adminUsers': S.adminList = m.list; if (S.view === 'admin') { const q = $('#ad-q'), at = q && q.selectionStart; renderAdmin(); const q2 = $('#ad-q'); if (q && q2 && document.activeElement !== q2 && S.adminQ) { q2.focus(); q2.setSelectionRange(at, at); } } break;
-    case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'tourneys') renderTabs(); break;
+    case 'tourneys': S.tourneys = m.list; if (S.view === 'tabs' && S.tab === 'tourneys') renderTabs(); else if (S.view === 'tabs' && S.tab === 'play') paintSng(); break;
     case 'tourney': if (!S.tourView || m.d.id === S.tourView) { S.tour = m.d; if (S.view === 'tourney') renderTourney(m.d.id, true); } break;
     case 'tourneyHosted': renderTourney(m.id); break;
     case 'moved': { const T = S.table; nav('/t/' + m.code); toast(T && T.code !== m.code ? 'You’ve been moved to a new table' : 'Your seat is ready'); break; }
@@ -698,24 +698,15 @@ function tourRows(list) {
 }
 function tabTourneys() {
   const all = (S.tourneys || []).filter(t => t.status !== 'canceled');
-  const game = S.sngGame || 'nlh';
-  const sngs = all.filter(t => t.sng && (t.status === 'registering' || t.me) && t.game === game)
-    .sort((a, b) => (a.me ? 0 : 1) - (b.me ? 0 : 1) || a.buyIn - b.buyIn || a.maxPlayers - b.maxPlayers);
   const series = all.filter(t => t.series), hosted = all.filter(t => !t.series && !t.sng);
   const html = `
     ${largeTitle('Tournaments', '<button class="btn small" id="host-t">Host one</button>')}
     <p class="lead">Register for one and we’ll seat you when it starts. Last one standing takes the top prize.</p>
     ${!S.tourneys ? skelRows(3) : ''}
-    <section class="sec first"><div class="sec-head"><div><h2 class="sec-title">Sit & Go</h2><p class="sec-sub">One table. Starts the moment it fills.</p></div></div>
-      <div class="game-seg sng-seg" role="radiogroup" aria-label="Game"><button role="radio" aria-checked="${game === 'nlh'}" data-sg="nlh">Hold’em</button><button role="radio" aria-checked="${game === 'plo'}" data-sg="plo">Omaha</button></div>
-      ${sngs.length ? tourRows(sngs) : '<div class="empty card-empty"><p>Opening new tables…</p></div>'}</section>
-    ${series.length ? `<section class="sec"><div class="sec-head"><h2 class="sec-title">Pokr Championship Series</h2></div>${tourRows(series)}</section>` : ''}
+    ${series.length ? `<section class="sec first"><div class="sec-head"><h2 class="sec-title">Pokr Championship Series</h2></div>${tourRows(series)}</section>` : ''}
     <section class="sec"><div class="sec-head"><h2 class="sec-title">Hosted by friends</h2></div>
       ${hosted.length ? tourRows(hosted) : '<div class="empty card-empty"><p>No private tournaments right now.</p><p class="sub">Host one, then send your friends the code.</p></div>'}</section>`;
-  const bind = () => {
-    bindTourneysSection();
-    app.querySelectorAll('[data-sg]').forEach(b => b.onclick = () => { S.sngGame = b.dataset.sg; buzz(4); renderTabs(); });
-  };
+  const bind = bindTourneysSection;
   return { html, bind };
 }
 function bindTourneysSection() {
@@ -899,6 +890,21 @@ function bindGameChips(rerender) {
     document.querySelectorAll('[data-bpick]').forEach(b => b.onclick = () => { S.blindFilter = b.dataset.bpick; closeModal(); rerender(); });
   });
 }
+// Sit & Gos live on Play with the cash tables, filtered by the same game chips.
+function sngSection() {
+  const g = S.gameFilter || 'all';
+  const all = (S.tourneys || []).filter(t => t.sng && t.status !== 'canceled' && (t.status === 'registering' || t.me) && (g === 'all' || t.game === g))
+    .sort((a, b) => (a.me ? 0 : 1) - (b.me ? 0 : 1) || a.buyIn - b.buyIn || (a.game === 'nlh' ? 0 : 1) - (b.game === 'nlh' ? 0 : 1) || a.maxPlayers - b.maxPlayers);
+  const shown = S.sngAll ? all : all.slice(0, 4);
+  return `<div class="sec-head"><div><h2 class="sec-title">Sit & Go</h2><p class="sec-sub">One table. Starts the moment it fills.</p></div></div>
+    ${!S.tourneys ? skelRows(2) : all.length ? tourRows(shown) + (all.length > 4 ? `<button class="textbtn sng-more" id="sng-more">${S.sngAll ? 'Show fewer' : `All ${all.length} Sit & Gos`}</button>` : '') : '<div class="empty card-empty"><p>Opening new tables…</p></div>'}`;
+}
+function bindSng() {
+  app.querySelectorAll('#sng-sec [data-tour]').forEach(b => b.onclick = () => renderTourney(b.dataset.tour));
+  const m = $('#sng-more'); if (m) m.onclick = () => { S.sngAll = !S.sngAll; paintSng(); };
+}
+// refresh just this section, so the table carousel above doesn't jump
+function paintSng() { const sec = $('#sng-sec'); if (!sec) return; sec.innerHTML = sngSection(); bindSng(); }
 function tabPlay() {
   const me = S.me, L = S.lobby || { tables: [] };
   const seated = Object.entries(me.atTablesBy || {});
@@ -950,12 +956,14 @@ function tabPlay() {
       ${!S.lobby ? skelRows(2) : list.length ? `<div class="glist">${list.slice(0, 6).map(tableRow).join('')}${list.length > 6 ? `<button class="grow more" id="view-all3"><span class="gr-main"><b>All ${list.length} tables</b></span>${TICON.chev}</button>` : ''}</div>`
         : `<div class="empty card-empty"><span class="empty-icon chip"></span><p>No tables match.</p><p class="sub"><button class="linkbtn" id="clear-f">Clear filters</button> or tap + to start one.</p></div>`}
     </section>
+    <section class="sec" id="sng-sec">${sngSection()}</section>
     <p class="fine">Play money only for now. No real money.</p>`;
   const bind = () => {
     $('#to-wallet').onclick = () => { S.tab = 'wallet'; renderTabs(); };
     $('#to-me').onclick = () => { S.tab = 'me'; renderTabs(); };
     bindGameChips(renderTabs);
     bindTourneysSection();
+    bindSng();
     if ($('#clear-f')) $('#clear-f').onclick = () => { S.gameFilter = 'all'; S.blindFilter = 'all'; S.hideFull = false; renderTabs(); };
     if ($('#hero-new')) $('#hero-new').onclick = openNewTable;
     ['#view-all', '#view-all2', '#view-all3'].forEach(id => { const b = $(id); if (b) b.onclick = renderAllTables; });
@@ -2342,8 +2350,8 @@ function renderStage() {
     // What they just did is a small tag above them; results sit under the plate.
     let tag = '', ttone = '', under = '', utone = '';
     const last = s.last || '';
-    if (/^small blind/i.test(last)) { tag = 'SB'; ttone = 'blind'; }
-    else if (/^big blind/i.test(last)) { tag = 'BB'; ttone = 'blind'; }
+    // posting a blind needs no tag: the SB / BB disc on the character already says it
+    if (/^(small|big) blind/i.test(last)) { tag = ''; }
     else if (s.folded && T.phase === 'play') { tag = 'Fold'; ttone = 'fold'; }
     else if (last && T.phase === 'play' && !turn) {
       const allin = /\ball[ -]?in\b/i.test(last);
@@ -2354,6 +2362,9 @@ function renderStage() {
     else if (!s.connected) { under = 'Away'; utone = 'away'; }
     else if (s.sittingOut && !s.dealt) { under = last === 'Busted' ? 'Busted' : 'Sitting out'; utone = 'away'; }
     const dealerHere = T.dealer === i && T.phase !== 'waiting';
+    // the blinds travel with the button, one seat on each hand; heads-up the dealer is the small blind
+    const blindHere = T.phase === 'waiting' ? null : T.bbSeat === i ? 'BB' : T.sbSeat === i ? 'SB' : null;
+    const pop = S.dealAt && now0 - S.dealAt < 700 ? 'pop' : '';
     // Cards sit beside the plate: backs while they're in the hand, faces at showdown, yours face up.
     let fan = '';
     if (isMe && s.cards.length) {
@@ -2367,7 +2378,7 @@ function renderStage() {
     html += `<div class="${cls}" style="left:${x}%;top:${y}%" data-seat="${i}">
       <div class="sp2 ${side} ${specialOf(s.avatar) ? 'vip sp-' + specialOf(s.avatar) : ''}">
         ${tag ? `<span class="sp-tag ${ttone}">${tag}</span>` : ''}
-        <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? '<span class="sp-badge d" aria-label="Dealer">D</span>' : ''}</div>
+        <div class="sp-fig">${portrait(s.avatar, s.name)}${dealerHere ? `<span class="sp-badge d ${pop}" aria-label="Dealer">D</span>` : ''}${blindHere ? `<span class="sp-blind ${blindHere.toLowerCase()} ${pop}" aria-label="${blindHere === 'SB' ? 'Small blind' : 'Big blind'}">${blindHere}</span>` : ''}</div>
         <div class="sp-plate" style="--pc:${DOTC[((s.avatar && s.avatar.c) || 0) % DOTC.length]}"><span class="nm">${isMe ? esc(S.me ? S.me.name : 'You') : esc(s.name)}${vipStar(s.avatar)}${(T.champSeats || []).includes(i) ? `<span class="champmark" role="img" aria-label="Club champion">${crownSVG()}</span>` : ''}</span><span class="ch">${fmt(s.chips)}</span>${turn ? '<span class="sp-timer" id="ring"></span>' : ''}</div>
         ${under ? `<span class="sp-under ${utone}">${under}</span>` : ''}
         ${fan ? `<div class="sp-fan n${s.cards.length} ${shown ? 'up' : ''} ${isMe ? 'myc' : ''}">${fan}</div>` : ''}

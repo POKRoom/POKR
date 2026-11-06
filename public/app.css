@@ -2547,3 +2547,17 @@ body:not(:has(.tbl)), body:not(:has(.tbl))[data-skin] { background-color: var(--
 .dialog input[type=time] { width: 100%; min-height: 44px; font-size: 17px; padding: 0 12px; color-scheme: dark; }
 .dialog input[hidden] { display: none; }
 @media (min-width: 900px) { .ccomp { margin-left: 0; } }
+/* Sit & Gos on Play */
+.sng-more { display: block; min-height: 44px; margin: 4px 0 0; padding: 0 4px; color: var(--brass); font-weight: 600; opacity: 1; }
+
+/* BLINDS: SB and BB discs travel round with the dealer button */
+.sp2 .sp-blind { position: absolute; z-index: 4; left: -8px; bottom: 6px; min-width: 22px; height: 19px; padding: 0 4px; border-radius: 10px;
+  display: grid; place-items: center; font: 700 9px/1 var(--sans); letter-spacing: .02em; box-shadow: 0 2px 4px rgba(0, 0, 0, .5); }
+.sp2 .sp-blind.sb { background: #1E1F23; color: var(--cream); border: 1px solid rgba(255, 255, 255, .28); }
+.sp2 .sp-blind.bb { background: var(--brass); color: #1A1408; }
+.sp2.left .sp-badge.d { right: auto; left: -6px; }
+.sp2.left .sp-blind { left: auto; right: -8px; }
+.sp-badge.pop, .sp-blind.pop { animation: blindpop .45s cubic-bezier(.2, .9, .3, 1.3) both; }
+@keyframes blindpop { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sp-badge.pop, .sp-blind.pop { animation: none; } }
+@media (min-width: 900px) { .sp2 .sp-blind { height: 20px; min-width: 24px; font-size: 9.5px; } }
